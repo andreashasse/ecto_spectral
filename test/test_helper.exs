@@ -1,6 +1,6 @@
 alias Ecto.Adapters.SQL.Sandbox
 
-case SpectralEcto.TestRepo.start_link() do
+case EctoSpectral.TestRepo.start_link() do
   {:ok, _pid} ->
     :ok
 
@@ -19,5 +19,5 @@ case SpectralEcto.TestRepo.start_link() do
     System.halt(1)
 end
 
-Sandbox.mode(SpectralEcto.TestRepo, :manual)
+Sandbox.mode(EctoSpectral.TestRepo, :manual)
 ExUnit.start()

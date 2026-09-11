@@ -1,18 +1,18 @@
-defmodule SpectralEcto.PostgresTest do
+defmodule EctoSpectral.PostgresTest do
   @moduledoc """
   The type against a real Postgres instance, writing and reading actual `jsonb`.
 
   Everything here goes through `Ecto.Repo`, so the driver does its own JSON
   serialization and the callbacks see the decoded terms they see in production.
   """
-  use SpectralEcto.DataCase, async: true
+  use EctoSpectral.DataCase, async: true
 
   alias Ecto.Changeset
-  alias SpectralEcto.LoadError
-  alias SpectralEcto.Test.Account
-  alias SpectralEcto.Test.Settings
-  alias SpectralEcto.Test.Shapes
-  alias SpectralEcto.Test.Tags
+  alias EctoSpectral.LoadError
+  alias EctoSpectral.Test.Account
+  alias EctoSpectral.Test.Settings
+  alias EctoSpectral.Test.Shapes
+  alias EctoSpectral.Test.Tags
 
   @dark %Settings{theme: :dark, notifications: false, locale: "sv"}
   @light %Settings{theme: :light, notifications: true, locale: nil}
@@ -227,7 +227,7 @@ defmodule SpectralEcto.PostgresTest do
       account
     end
 
-    test "raises SpectralEcto.LoadError by default" do
+    test "raises EctoSpectral.LoadError by default" do
       account = insert!(%{settings: @dark}) |> corrupt!("settings")
 
       error = assert_raise LoadError, fn -> reload(account) end

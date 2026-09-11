@@ -1,4 +1,4 @@
-defmodule SpectralEcto.DataCase do
+defmodule EctoSpectral.DataCase do
   @moduledoc "Wraps each test in a sandboxed transaction against the test database."
 
   use ExUnit.CaseTemplate
@@ -9,12 +9,12 @@ defmodule SpectralEcto.DataCase do
     quote do
       import Ecto.Query
 
-      alias SpectralEcto.TestRepo, as: Repo
+      alias EctoSpectral.TestRepo, as: Repo
     end
   end
 
   setup tags do
-    pid = Sandbox.start_owner!(SpectralEcto.TestRepo, shared: not tags[:async])
+    pid = Sandbox.start_owner!(EctoSpectral.TestRepo, shared: not tags[:async])
     on_exit(fn -> Sandbox.stop_owner(pid) end)
     :ok
   end

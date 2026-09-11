@@ -1,4 +1,4 @@
-defmodule SpectralEcto.Test.Settings do
+defmodule EctoSpectral.Test.Settings do
   @moduledoc "A plain struct type, the common case for a jsonb column."
   use Spectral
 
@@ -11,7 +11,7 @@ defmodule SpectralEcto.Test.Settings do
         }
 end
 
-defmodule SpectralEcto.Test.Shapes do
+defmodule EctoSpectral.Test.Shapes do
   @moduledoc "A self-describing union: the discriminator lives in the document."
   use Spectral
 
@@ -32,7 +32,7 @@ defmodule SpectralEcto.Test.Shapes do
   @type shape :: Circle.t() | Square.t()
 end
 
-defmodule SpectralEcto.Test.Tags do
+defmodule EctoSpectral.Test.Tags do
   @moduledoc "A type whose top level is a list rather than a map."
   use Spectral
 

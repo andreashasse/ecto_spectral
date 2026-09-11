@@ -1,14 +1,14 @@
 import Config
 
 if config_env() == :test do
-  config :spectral_ecto, ecto_repos: [SpectralEcto.TestRepo]
+  config :ecto_spectral, ecto_repos: [EctoSpectral.TestRepo]
 
-  config :spectral_ecto, SpectralEcto.TestRepo,
+  config :ecto_spectral, EctoSpectral.TestRepo,
     username: System.get_env("PGUSER", "postgres"),
     password: System.get_env("PGPASSWORD", "postgres"),
     hostname: System.get_env("PGHOST", "localhost"),
     port: String.to_integer(System.get_env("PGPORT", "5432")),
-    database: System.get_env("PGDATABASE", "spectral_ecto_test"),
+    database: System.get_env("PGDATABASE", "ecto_spectral_test"),
     pool: Ecto.Adapters.SQL.Sandbox,
     priv: "priv/repo",
     log: false

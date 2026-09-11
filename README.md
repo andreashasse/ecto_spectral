@@ -1,4 +1,4 @@
-# SpectralEcto
+# EctoSpectral
 
 An `Ecto.ParameterizedType` that stores [Spectral](https://github.com/andreashasse/spectral)-typed
 values in `jsonb` columns.
@@ -20,7 +20,7 @@ defmodule MyApp.Account do
   use Ecto.Schema
 
   schema "accounts" do
-    field :settings, SpectralEcto.JSONB, module: MyApp.Settings, type: :t
+    field :settings, EctoSpectral.JSONB, module: MyApp.Settings, type: :t
   end
 end
 ```
@@ -51,7 +51,7 @@ story as Ecto releases. Keeping it here leaves Spectral free of all three.
 ```elixir
 def deps do
   [
-    {:spectral_ecto, "~> 0.1"}
+    {:ecto_spectral, "~> 0.1"}
   ]
 end
 ```
@@ -117,7 +117,7 @@ field and the value, without Spectral's error list.
 
 `load/3` can only return `:error` too, which Ecto turns into an `ArgumentError`. A load
 failure means the column already holds data that does not match the declared type, which is
-a data bug rather than user input, so this type raises `SpectralEcto.LoadError` instead and
+a data bug rather than user input, so this type raises `EctoSpectral.LoadError` instead and
 carries the full error list on the exception. Pass `on_load_error: :error` to get Ecto's
 `ArgumentError` back.
 

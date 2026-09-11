@@ -1,39 +1,39 @@
-defmodule SpectralEcto.Test.Profile do
+defmodule EctoSpectral.Test.Profile do
   @moduledoc "Embedded schema, so embed_as/2 decides how the inner field is stored."
   use Ecto.Schema
 
-  alias SpectralEcto.Test.Settings
+  alias EctoSpectral.Test.Settings
 
   @primary_key false
   embedded_schema do
     field :nickname, :string
-    field :settings, SpectralEcto.JSONB, module: Settings, type: :t
+    field :settings, EctoSpectral.JSONB, module: Settings, type: :t
   end
 end
 
-defmodule SpectralEcto.Test.Account do
+defmodule EctoSpectral.Test.Account do
   @moduledoc false
   use Ecto.Schema
 
   import Ecto.Changeset
 
-  alias SpectralEcto.Test.Settings
-  alias SpectralEcto.Test.Shapes
-  alias SpectralEcto.Test.Tags
+  alias EctoSpectral.Test.Settings
+  alias EctoSpectral.Test.Shapes
+  alias EctoSpectral.Test.Tags
 
   schema "accounts" do
-    field :settings, SpectralEcto.JSONB, module: Settings, type: :t
-    field :required_settings, SpectralEcto.JSONB, module: Settings, type: :t
-    field :shape, SpectralEcto.JSONB, module: Shapes, type: :shape
-    field :names, SpectralEcto.JSONB, module: Tags, type: :names
-    field :tags, SpectralEcto.JSONB, module: Tags, type: :tags
+    field :settings, EctoSpectral.JSONB, module: Settings, type: :t
+    field :required_settings, EctoSpectral.JSONB, module: Settings, type: :t
+    field :shape, EctoSpectral.JSONB, module: Shapes, type: :shape
+    field :names, EctoSpectral.JSONB, module: Tags, type: :names
+    field :tags, EctoSpectral.JSONB, module: Tags, type: :tags
 
-    field :lenient_settings, SpectralEcto.JSONB,
+    field :lenient_settings, EctoSpectral.JSONB,
       module: Settings,
       type: :t,
       on_load_error: :error
 
-    embeds_one :profile, SpectralEcto.Test.Profile, on_replace: :update
+    embeds_one :profile, EctoSpectral.Test.Profile, on_replace: :update
   end
 
   @fields ~w(settings required_settings shape names tags lenient_settings)a

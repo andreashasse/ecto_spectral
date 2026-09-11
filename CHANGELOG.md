@@ -4,5 +4,5 @@
 
 Initial release.
 
-- `SpectralEcto.JSONB`, an `Ecto.ParameterizedType` parameterized by `:module` and `:type`.
-- `SpectralEcto.LoadError`, raised when a stored document does not match the declared type.
+- `EctoSpectral.JSONB`, an `Ecto.ParameterizedType` parameterized by `:module` and `:type`.
+- `EctoSpectral.LoadError`, raised when a stored document does not match the declared type.

@@ -1,4 +1,4 @@
-defmodule SpectralEcto.TestRepo.Migrations.CreateAccounts do
+defmodule EctoSpectral.TestRepo.Migrations.CreateAccounts do
   use Ecto.Migration
 
   def change do

@@ -1,12 +1,12 @@
-defmodule SpectralEcto.MixProject do
+defmodule EctoSpectral.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/andreashasse/spectral_ecto"
+  @source_url "https://github.com/andreashasse/ecto_spectral"
 
   def project do
     [
-      app: :spectral_ecto,
+      app: :ecto_spectral,
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
@@ -14,7 +14,7 @@ defmodule SpectralEcto.MixProject do
       package: package(),
       deps: deps(),
       docs: docs(),
-      name: "SpectralEcto",
+      name: "EctoSpectral",
       source_url: @source_url,
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
@@ -60,8 +60,8 @@ defmodule SpectralEcto.MixProject do
   defp package do
     [
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md)
+      links: %{"GitHub" => @source_url, "Spectral" => "https://hexdocs.pm/spectral"},
+      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE.md)
     ]
   end
 

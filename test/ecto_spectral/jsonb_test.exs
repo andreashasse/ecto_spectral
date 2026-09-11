@@ -1,17 +1,17 @@
-defmodule SpectralEcto.JSONBTest do
+defmodule EctoSpectral.JSONBTest do
   @moduledoc """
   The callbacks on their own, without a database.
 
-  `test/spectral_ecto/postgres_test.exs` covers the same type against real
+  `test/ecto_spectral/postgres_test.exs` covers the same type against real
   `jsonb`; these tests pin down the behaviour Ecto relies on in between.
   """
   use ExUnit.Case, async: true
 
-  alias SpectralEcto.JSONB
-  alias SpectralEcto.LoadError
-  alias SpectralEcto.Test.Settings
-  alias SpectralEcto.Test.Shapes
-  alias SpectralEcto.Test.Tags
+  alias EctoSpectral.JSONB
+  alias EctoSpectral.LoadError
+  alias EctoSpectral.Test.Settings
+  alias EctoSpectral.Test.Shapes
+  alias EctoSpectral.Test.Tags
 
   @settings JSONB.init(module: Settings, type: :t)
   @lenient JSONB.init(module: Settings, type: :t, on_load_error: :error)
@@ -126,7 +126,7 @@ defmodule SpectralEcto.JSONBTest do
       error =
         assert_raise LoadError, fn -> JSONB.load(%{"theme" => "mauve"}, nil, @settings) end
 
-      assert error.message =~ "SpectralEcto.Test.Settings.t"
+      assert error.message =~ "EctoSpectral.Test.Settings.t"
       assert [%Spectral.Error{location: [:theme]}] = error.errors
     end
 
@@ -177,6 +177,6 @@ defmodule SpectralEcto.JSONBTest do
   end
 
   test "format/1 names the type behind the field" do
-    assert JSONB.format(@settings) =~ "SpectralEcto.Test.Settings.t"
+    assert JSONB.format(@settings) =~ "EctoSpectral.Test.Settings.t"
   end
 end

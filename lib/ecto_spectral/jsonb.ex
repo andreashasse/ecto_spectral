@@ -1,4 +1,4 @@
-defmodule SpectralEcto.JSONB do
+defmodule EctoSpectral.JSONB do
   @moduledoc """
   An `Ecto.ParameterizedType` that stores a Spectral-typed value in a `jsonb` column.
 
@@ -6,7 +6,7 @@ defmodule SpectralEcto.JSONB do
         use Ecto.Schema
 
         schema "accounts" do
-          field :settings, SpectralEcto.JSONB, module: MyApp.Settings, type: :t
+          field :settings, EctoSpectral.JSONB, module: MyApp.Settings, type: :t
         end
       end
 
@@ -36,7 +36,7 @@ defmodule SpectralEcto.JSONB do
       `ArgumentError` naming the field and the schema. Because a load failure
       means the column already holds data that does not match the type, which
       is a bug rather than user input, this type raises
-      `SpectralEcto.LoadError` with the full error list instead. Pass
+      `EctoSpectral.LoadError` with the full error list instead. Pass
       `on_load_error: :error` to get Ecto's `ArgumentError` back.
 
   ## `nil`
@@ -73,7 +73,7 @@ defmodule SpectralEcto.JSONB do
 
   use Ecto.ParameterizedType
 
-  alias SpectralEcto.LoadError
+  alias EctoSpectral.LoadError
 
   @type params :: %{
           module: module(),
@@ -139,7 +139,7 @@ defmodule SpectralEcto.JSONB do
 
   @impl Ecto.ParameterizedType
   def format(%{module: module, type: type}) do
-    "#SpectralEcto.JSONB<#{inspect(module)}.#{type}>"
+    "#EctoSpectral.JSONB<#{inspect(module)}.#{type}>"
   end
 
   # Encoding a value that is nowhere near the type can raise rather than return
@@ -179,7 +179,7 @@ defmodule SpectralEcto.JSONB do
 
       :error ->
         raise ArgumentError,
-              "SpectralEcto.JSONB requires the #{inspect(key)} option, got: #{inspect(opts)}"
+              "EctoSpectral.JSONB requires the #{inspect(key)} option, got: #{inspect(opts)}"
     end
   end
 
@@ -190,7 +190,7 @@ defmodule SpectralEcto.JSONB do
 
       other ->
         raise ArgumentError,
-              "SpectralEcto.JSONB :on_load_error must be :raise or :error, got: #{inspect(other)}"
+              "EctoSpectral.JSONB :on_load_error must be :raise or :error, got: #{inspect(other)}"
     end
   end
 end
