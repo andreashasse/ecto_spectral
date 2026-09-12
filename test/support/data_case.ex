@@ -9,7 +9,7 @@ defmodule EctoSpectral.DataCase do
     quote do
       import Ecto.Query
 
-      alias EctoSpectral.TestRepo, as: Repo
+      alias EctoSpectral.TestRepo
     end
   end
 

@@ -18,7 +18,7 @@ defmodule EctoSpectral.LoadError do
 
   defexception [:message, :errors]
 
-  @impl true
+  @impl Exception
   def message(%__MODULE__{message: nil}),
     do: "a stored document did not match its Spectral type"
 

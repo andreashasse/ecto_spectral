@@ -225,10 +225,9 @@ defmodule EctoSpectral.JSONB do
   def cast(nil, _params), do: {:ok, nil}
 
   def cast(value, %{module: module, type: type}) do
-    if document_shaped?(value) do
-      cast_either(value, module, type)
-    else
-      cast_native(value, module, type)
+    case document_shaped?(value) do
+      true -> cast_either(value, module, type)
+      false -> cast_native(value, module, type)
     end
   end
 
@@ -291,10 +290,10 @@ defmodule EctoSpectral.JSONB do
     decoded = Spectral.decode(value, module, type, :json, [:pre_decoded])
 
     case {encoded, decoded} do
-      {{:ok, _}, {:ok, term}} -> {:ok, term}
-      {{:ok, _}, {:error, _}} -> {:ok, value}
-      {_, {:ok, term}} -> {:ok, term}
-      {_, {:error, errors}} -> cast_error(errors)
+      {{:ok, _encoded}, {:ok, term}} -> {:ok, term}
+      {{:ok, _encoded}, {:error, _errors}} -> {:ok, value}
+      {_encoded, {:ok, term}} -> {:ok, term}
+      {_encoded, {:error, errors}} -> cast_error(errors)
     end
   end
 
@@ -306,7 +305,7 @@ defmodule EctoSpectral.JSONB do
   # or an atom value, can only be a term of the type.
   defp document_shaped?(value) when is_binary(value) or is_number(value), do: true
   defp document_shaped?(value) when is_boolean(value) or is_nil(value), do: true
-  defp document_shaped?(%_{}), do: false
+  defp document_shaped?(%_struct{}), do: false
 
   defp document_shaped?(value) when is_map(value),
     do: Enum.all?(value, fn {key, item} -> is_binary(key) and document_shaped?(item) end)

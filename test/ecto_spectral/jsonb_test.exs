@@ -149,7 +149,7 @@ defmodule EctoSpectral.JSONBTest do
     end
 
     test "an atom key nested inside a document makes it a term, not a document" do
-      assert {:error, _} = JSONB.cast(%{"theme" => %{nested: true}}, @settings)
+      assert {:error, _opts} = JSONB.cast(%{"theme" => %{nested: true}}, @settings)
     end
 
     test "keeps fields a type does not expose" do
@@ -191,7 +191,7 @@ defmodule EctoSpectral.JSONBTest do
     end
 
     test "rejects a value that is neither shape" do
-      assert {:error, _} = JSONB.cast("dark", @settings)
+      assert {:error, _opts} = JSONB.cast("dark", @settings)
     end
 
     test "reports the decoding error when a document is almost right" do
@@ -234,7 +234,7 @@ defmodule EctoSpectral.JSONBTest do
 
     test "bounds the size of the message, however deep the document nests" do
       deep =
-        Enum.reduce(1..18, %{"x" => 1}, fn _, acc -> %{"a" => acc, "b" => acc, "c" => acc} end)
+        Enum.reduce(1..18, %{"x" => 1}, fn _i, acc -> %{"a" => acc, "b" => acc, "c" => acc} end)
 
       error =
         assert_raise LoadError, fn ->

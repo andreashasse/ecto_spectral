@@ -5,7 +5,7 @@ case EctoSpectral.TestRepo.start_link() do
     :ok
 
   {:error, reason} ->
-    IO.puts(:stderr, """
+    IO.write(:stderr, """
     Could not connect to Postgres: #{inspect(reason)}
 
     The suite needs a real Postgres instance, because the point of it is to

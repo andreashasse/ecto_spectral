@@ -1,6 +1,7 @@
 defmodule EctoSpectral.TestRepo.Migrations.CreateAccounts do
   use Ecto.Migration
 
+  @spec change() :: term()
   def change do
     create table(:accounts) do
       add :settings, :map

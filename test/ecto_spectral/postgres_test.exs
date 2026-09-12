@@ -22,29 +22,32 @@ defmodule EctoSpectral.PostgresTest do
   defp insert!(attrs \\ %{}) do
     %Account{}
     |> Account.changeset(Map.put_new(attrs, :required_settings, @light))
-    |> Repo.insert!()
+    |> TestRepo.insert!()
   end
 
-  defp reload(account), do: Repo.get!(Account, account.id)
+  defp reload(account), do: TestRepo.get!(Account, account.id)
 
   defp raw(account, column) do
     %{rows: [[value]]} =
-      Repo.query!("SELECT #{column} FROM accounts WHERE id = $1", [account.id])
+      TestRepo.query!("SELECT #{column} FROM accounts WHERE id = $1", [account.id])
 
     value
   end
 
   defp corrupt!(account, column) do
-    Repo.query!(~s|UPDATE accounts SET #{column} = '{"theme":"mauve"}'::jsonb WHERE id = $1|, [
-      account.id
-    ])
+    TestRepo.query!(
+      ~s|UPDATE accounts SET #{column} = '{"theme":"mauve"}'::jsonb WHERE id = $1|,
+      [
+        account.id
+      ]
+    )
 
     account
   end
 
   defp column_type(column) do
     %{rows: [[type]]} =
-      Repo.query!(
+      TestRepo.query!(
         "SELECT data_type FROM information_schema.columns WHERE table_name = 'accounts' AND column_name = $1",
         [column]
       )
@@ -82,7 +85,7 @@ defmodule EctoSpectral.PostgresTest do
       updated =
         account
         |> Changeset.change(settings: @light)
-        |> Repo.update!()
+        |> TestRepo.update!()
 
       assert reload(updated).settings == @light
       assert raw(updated, "settings")["theme"] == "light"
@@ -92,24 +95,25 @@ defmodule EctoSpectral.PostgresTest do
       account = insert!(%{settings: @dark})
       _other = insert!(%{settings: @light})
 
-      found = Repo.all(from a in Account, where: a.settings == ^@dark, select: a.id)
+      query = from a in Account, where: a.settings == ^@dark, select: a.id
+      found = TestRepo.all(query)
 
       assert found == [account.id]
     end
 
     test "insert_all dumps the same way" do
       {1, nil} =
-        Repo.insert_all(Account, [%{required_settings: @light, settings: @dark}])
+        TestRepo.insert_all(Account, [%{required_settings: @light, settings: @dark}])
 
-      assert [%Account{settings: settings}] = Repo.all(Account)
+      assert [%Account{settings: settings}] = TestRepo.all(Account)
       assert settings == @dark
     end
 
     test "update_all casts the value it is given" do
       account = insert!(%{settings: @light})
 
-      {1, nil} =
-        Repo.update_all(from(a in Account, where: a.id == ^account.id), set: [settings: @dark])
+      query = from a in Account, where: a.id == ^account.id
+      {1, nil} = TestRepo.update_all(query, set: [settings: @dark])
 
       assert reload(account).settings == @dark
 
@@ -125,10 +129,10 @@ defmodule EctoSpectral.PostgresTest do
 
       # update_all casts its set-values, so this is the path that used to
       # write the struct's defaults without complaint.
+      query = from a in Account, where: a.id == ^account.id
+
       assert_raise Ecto.Query.CastError, ~r/cannot be cast/, fn ->
-        Repo.update_all(from(a in Account, where: a.id == ^account.id),
-          set: [settings: %Settings{theme: :mauve}]
-        )
+        TestRepo.update_all(query, set: [settings: %Settings{theme: :mauve}])
       end
     end
 
@@ -137,10 +141,8 @@ defmodule EctoSpectral.PostgresTest do
       # match none of the keys, and overwrite the row with the type's defaults.
       account = insert!(%{prefs: %{theme: :dark, rows: 10}})
 
-      {1, nil} =
-        Repo.update_all(from(a in Account, where: a.id == ^account.id),
-          set: [prefs: %{theme: :light, rows: 20}]
-        )
+      query = from a in Account, where: a.id == ^account.id
+      {1, nil} = TestRepo.update_all(query, set: [prefs: %{theme: :light, rows: 20}])
 
       assert raw(account, "prefs") == %{"theme" => "light", "rows" => 20}
       assert reload(account).prefs == %{theme: :light, rows: 20}
@@ -149,10 +151,10 @@ defmodule EctoSpectral.PostgresTest do
     test "an atom-keyed map that does not match the type is reported" do
       account = insert!(%{prefs: %{theme: :dark}})
 
+      query = from a in Account, where: a.id == ^account.id
+
       assert_raise Ecto.Query.CastError, fn ->
-        Repo.update_all(from(a in Account, where: a.id == ^account.id),
-          set: [prefs: %{theme: :mauve}]
-        )
+        TestRepo.update_all(query, set: [prefs: %{theme: :mauve}])
       end
 
       assert raw(account, "prefs") == %{"theme" => "dark"}
@@ -161,14 +163,18 @@ defmodule EctoSpectral.PostgresTest do
     test "get_by finds a row by the dumped document" do
       account = insert!(%{settings: @dark})
 
-      assert Repo.get_by(Account, settings: @dark).id == account.id
+      assert TestRepo.get_by(Account, settings: @dark).id == account.id
     end
 
     test "stream loads the same values as all/1" do
       account = insert!(%{settings: @dark})
 
       streamed =
-        Repo.transaction(fn -> Account |> Repo.stream() |> Enum.map(& &1.settings) end)
+        TestRepo.transaction(fn ->
+          Account
+          |> TestRepo.stream()
+          |> Enum.map(& &1.settings)
+        end)
 
       assert {:ok, [@dark]} = streamed
       assert reload(account).settings == @dark
@@ -177,16 +183,19 @@ defmodule EctoSpectral.PostgresTest do
     test "force_change writes a value equal to the stored one" do
       account = insert!(%{settings: @dark})
 
-      changeset = account |> Changeset.change() |> Changeset.force_change(:settings, @dark)
+      changeset =
+        account
+        |> Changeset.change()
+        |> Changeset.force_change(:settings, @dark)
 
-      assert Repo.update!(changeset).settings == @dark
+      assert TestRepo.update!(changeset).settings == @dark
     end
 
     test "the database can query inside the document" do
       account = insert!(%{settings: @dark})
 
       assert %{rows: [[id]]} =
-               Repo.query!("SELECT id FROM accounts WHERE settings->>'theme' = 'dark'")
+               TestRepo.query!("SELECT id FROM accounts WHERE settings->>'theme' = 'dark'")
 
       assert id == account.id
     end
@@ -201,7 +210,9 @@ defmodule EctoSpectral.PostgresTest do
     end
 
     test "an omitted field is nil too" do
-      assert insert!() |> reload() |> Map.fetch!(:settings) == nil
+      account = insert!()
+
+      assert reload(account).settings == nil
     end
 
     test "cast/2 accepts nil through a changeset" do
@@ -216,7 +227,7 @@ defmodule EctoSpectral.PostgresTest do
   describe "a NOT NULL column" do
     test "is enforced by the database when the changeset is bypassed" do
       assert_raise Postgrex.Error, ~r/not-null constraint/, fn ->
-        Repo.insert!(%Account{required_settings: nil})
+        TestRepo.insert!(%Account{required_settings: nil})
       end
     end
 
@@ -224,7 +235,7 @@ defmodule EctoSpectral.PostgresTest do
       changeset = Account.changeset(%Account{}, %{})
 
       refute changeset.valid?
-      assert {"can't be blank", _} = changeset.errors[:required_settings]
+      assert {"can't be blank", _opts} = changeset.errors[:required_settings]
     end
 
     test "round trips like any other column" do
@@ -264,7 +275,9 @@ defmodule EctoSpectral.PostgresTest do
       account = insert!(%{names: ["alpha", "beta"]})
 
       assert %{rows: [["array"]]} =
-               Repo.query!("SELECT jsonb_typeof(names) FROM accounts WHERE id = $1", [account.id])
+               TestRepo.query!("SELECT jsonb_typeof(names) FROM accounts WHERE id = $1", [
+                 account.id
+               ])
     end
   end
 
@@ -282,7 +295,7 @@ defmodule EctoSpectral.PostgresTest do
       assert raw(account, "shape") == %{"kind" => "circle", "radius" => 1.5}
 
       assert %{rows: [[id]]} =
-               Repo.query!("SELECT id FROM accounts WHERE shape->>'kind' = 'circle'")
+               TestRepo.query!("SELECT id FROM accounts WHERE shape->>'kind' = 'circle'")
 
       assert id == account.id
     end
@@ -298,11 +311,14 @@ defmodule EctoSpectral.PostgresTest do
       account = insert!(%{many_settings: @settings_list})
 
       assert %{rows: [[2]]} =
-               Repo.query!("SELECT array_length(many_settings, 1) FROM accounts WHERE id = $1", [
-                 account.id
-               ])
+               TestRepo.query!(
+                 "SELECT array_length(many_settings, 1) FROM accounts WHERE id = $1",
+                 [
+                   account.id
+                 ]
+               )
 
-      assert [%{"theme" => "dark"} | _] = raw(account, "many_settings")
+      assert [%{"theme" => "dark"} | _rest] = raw(account, "many_settings")
     end
 
     test "round trips" do
@@ -344,7 +360,7 @@ defmodule EctoSpectral.PostgresTest do
       changeset =
         Account.changeset(%Account{}, %{"mode" => "dark", "required_settings" => @light})
 
-      account = Repo.insert!(changeset)
+      account = TestRepo.insert!(changeset)
 
       assert Changeset.get_change(changeset, :mode) == :dark
       assert account.mode == :dark
@@ -353,7 +369,7 @@ defmodule EctoSpectral.PostgresTest do
     end
 
     test "re-submitting the loaded value is not a change" do
-      account = insert!(%{mode: "dark"}) |> reload()
+      account = reload(insert!(%{mode: "dark"}))
 
       changeset = Account.changeset(account, %{"mode" => "dark"})
 
@@ -369,7 +385,7 @@ defmodule EctoSpectral.PostgresTest do
         %Account{}
         |> Changeset.change(required_settings: @light)
         |> Changeset.put_embed(:profile, %{nickname: "ada", settings: @dark})
-        |> Repo.insert!()
+        |> TestRepo.insert!()
 
       assert raw(account, "profile") == %{
                "nickname" => "ada",
@@ -382,7 +398,7 @@ defmodule EctoSpectral.PostgresTest do
 
   describe "data in the column that does not match the type" do
     test "raises EctoSpectral.LoadError by default" do
-      account = insert!(%{settings: @dark}) |> corrupt!("settings")
+      account = corrupt!(insert!(%{settings: @dark}), "settings")
 
       error = assert_raise LoadError, fn -> reload(account) end
       assert error.message =~ "mauve"
@@ -390,7 +406,7 @@ defmodule EctoSpectral.PostgresTest do
     end
 
     test "falls back to Ecto's own ArgumentError with on_load_error: :error" do
-      account = insert!(%{lenient_settings: @dark}) |> corrupt!("lenient_settings")
+      account = corrupt!(insert!(%{lenient_settings: @dark}), "lenient_settings")
 
       error = assert_raise ArgumentError, fn -> reload(account) end
       assert error.message =~ "cannot load"
@@ -401,10 +417,10 @@ defmodule EctoSpectral.PostgresTest do
   describe "a jsonb document that is itself null" do
     test "loads as nil, because the driver cannot distinguish it from SQL NULL" do
       account = insert!(%{settings: @dark})
-      Repo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
+      TestRepo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
 
       assert %{rows: [["null", false]]} =
-               Repo.query!(
+               TestRepo.query!(
                  "SELECT jsonb_typeof(settings), settings IS NULL FROM accounts WHERE id = $1",
                  [account.id]
                )
@@ -415,7 +431,7 @@ defmodule EctoSpectral.PostgresTest do
 
     test "writing the field replaces it with a real NULL" do
       account = insert!(%{settings: @dark})
-      Repo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
+      TestRepo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
 
       # It loaded as nil, so setting nil is not a change; force the write.
       updated =
@@ -423,10 +439,10 @@ defmodule EctoSpectral.PostgresTest do
         |> reload()
         |> Changeset.change()
         |> Changeset.force_change(:settings, nil)
-        |> Repo.update!()
+        |> TestRepo.update!()
 
       assert %{rows: [[nil, true]]} =
-               Repo.query!(
+               TestRepo.query!(
                  "SELECT jsonb_typeof(settings), settings IS NULL FROM accounts WHERE id = $1",
                  [updated.id]
                )
@@ -460,7 +476,7 @@ defmodule EctoSpectral.PostgresTest do
     test "renders in the error Ecto builds from format/1" do
       account = insert!(%{number: %Numbers{value: 1.5}})
 
-      Repo.query!(~s|UPDATE accounts SET number = '{"value":"x"}'::jsonb WHERE id = $1|, [
+      TestRepo.query!(~s|UPDATE accounts SET number = '{"value":"x"}'::jsonb WHERE id = $1|, [
         account.id
       ])
 
@@ -476,7 +492,10 @@ defmodule EctoSpectral.PostgresTest do
         "required_settings" => %{"theme" => "light", "notifications" => true, "locale" => nil}
       }
 
-      account = %Account{} |> Account.changeset(params) |> Repo.insert!()
+      account =
+        %Account{}
+        |> Account.changeset(params)
+        |> TestRepo.insert!()
 
       assert reload(account).settings == @dark
     end
@@ -498,7 +517,7 @@ defmodule EctoSpectral.PostgresTest do
       assert_raise Ecto.ChangeError, fn ->
         %Account{}
         |> Changeset.change(required_settings: @light, settings: %Settings{theme: :mauve})
-        |> Repo.insert!()
+        |> TestRepo.insert!()
       end
     end
   end

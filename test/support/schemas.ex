@@ -48,6 +48,7 @@ defmodule EctoSpectral.Test.Account do
 
   @fields ~w(settings required_settings shape names tags lenient_settings mode number many_settings prefs partial)a
 
+  @spec changeset(Ecto.Schema.t(), map()) :: Ecto.Changeset.t()
   def changeset(account, params) do
     account
     |> cast(params, @fields)

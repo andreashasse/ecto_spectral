@@ -1,6 +1,7 @@
 defmodule EctoSpectral.TestRepo.Migrations.AddAmbiguousAndArrayColumns do
   use Ecto.Migration
 
+  @spec change() :: term()
   def change do
     alter table(:accounts) do
       add :mode, :map
