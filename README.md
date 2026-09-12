@@ -70,7 +70,7 @@ config :postgrex, :json_library, JSON
 | Option | | |
 |---|---|---|
 | `:module` | required | The module holding the type definition |
-| `:type` | required | The name of the type in that module, as an atom, or a Spectral type reference such as `{:type, :t, 0}` |
+| `:type` | required | The name of the type in that module, as an atom, or a Spectral type reference such as `{:type, :t, 0}` to pick between types sharing a name |
 | `:on_load_error` | `:raise` (default) or `:error` | What a load failure does |
 
 Anything else is rejected, apart from the options `Ecto.Schema` itself adds to a field. A
@@ -98,21 +98,29 @@ Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
 Ecto.Changeset.cast(account, %{settings: %MyApp.Settings{theme: :dark}}, [:settings])
 ```
 
-A struct is only ever read as a native term. A JSON document is never a struct, and a
-struct's keys are atoms, so reading one as a document would match nothing and fill every
-field from the struct's defaults, silently replacing the value you passed.
+Which reading it uses comes down to shape. A `jsonb` column can only hand back an object with
+string keys, an array, a string, a number, a boolean or null, so a value carrying a struct, an
+atom key or an atom value anywhere inside it can only be a term of the type, and the document
+reading is not tried at all. That matters because reading such a value as a document matches
+none of its keys and fills every field from the type's defaults, which would silently replace
+what you passed.
 
-Anything else that encodes successfully is a native term, and what you get back is that term
-encoded and decoded again, so `cast/2` always answers with the value `load/3` would return
-for the same row. Some types accept the same value in both readings while meaning different
-things by it. `:dark | String.t()` is the clearest case: `"dark"` is a valid `String.t()` and
-also the encoding of `:dark`. Without that step `cast/2` would keep the string, `load/3`
-would answer `:dark`, and the field would report a change on every save.
+When the value could be either, and both readings claim it, the answer is the one `load/3`
+would give. Some types accept the same value both ways while meaning different things by it:
+with `:dark | String.t()`, `"dark"` is a valid `String.t()` and also the encoding of `:dark`.
+Otherwise `cast/2` would keep the string, `load/3` would answer `:dark`, and the field would
+report a change on every save.
 
-`cast/2` is as strict as the type and no stricter. Spectral ignores document keys the type
-does not mention and fills omitted fields from the struct defaults, so a form posting
-`settings[them]` instead of `settings[theme]` casts to the defaults rather than failing. Put
-anything the type does not express into `Ecto.Changeset` validations.
+Nothing is re-encoded on the way through, so a type that exposes only some of its struct's
+fields still casts to the whole struct. The fields it does not expose are dropped by `dump/3`,
+where the type says they should be.
+
+Neither `cast/2` nor `load/3` is stricter than the type. Spectral ignores document keys the
+type does not mention and fills omitted fields from the struct defaults, so a form posting
+`settings[them]` instead of `settings[theme]` casts to the defaults rather than failing, and a
+stored document with no keys in common with the type loads as the defaults rather than
+raising. What `load/3` catches is a key that is present and wrong, not a document that is
+simply unrelated. Put anything the type does not express into `Ecto.Changeset` validations.
 
 ### Errors
 
@@ -183,9 +191,10 @@ Tested against Postgres, where `:map` means `jsonb` and the adapter hands the du
 to the driver untouched. Other adapters make their own arrangements for `:map` and are
 neither tested nor supported.
 
-`{:array, EctoSpectral.JSONB}` is not supported. It appears to work, but Ecto passes the
-whole list to the driver as a single `jsonb` parameter rather than as a `jsonb[]`. Use a type
-whose top level is a list instead.
+`{:array, EctoSpectral.JSONB}` works against a column declared `add :col, {:array, :map}`.
+Ecto dumps the elements one at a time and Postgres stores them as a real `jsonb[]`. Point it
+at a plain `jsonb` column by mistake and the list is stored as a single JSON array instead,
+which round trips but is not what the field says it is.
 
 ## Running the tests
 

@@ -11,6 +11,8 @@ defmodule EctoSpectral.JSONBTest do
   alias EctoSpectral.LoadError
   alias EctoSpectral.Test.Modes
   alias EctoSpectral.Test.Numbers
+  alias EctoSpectral.Test.Partial
+  alias EctoSpectral.Test.Prefs
   alias EctoSpectral.Test.Settings
   alias EctoSpectral.Test.Shapes
   alias EctoSpectral.Test.Tags
@@ -19,6 +21,8 @@ defmodule EctoSpectral.JSONBTest do
   @lenient JSONB.init(module: Settings, type: :t, on_load_error: :error)
   @names JSONB.init(module: Tags, type: :names)
   @mode JSONB.init(module: Modes, type: :mode)
+  @prefs JSONB.init(module: Prefs, type: :t)
+  @partial JSONB.init(module: Partial, type: :t)
 
   @dark %Settings{theme: :dark, notifications: false, locale: "sv"}
   @dark_json %{"theme" => "dark", "notifications" => false, "locale" => "sv"}
@@ -69,7 +73,8 @@ defmodule EctoSpectral.JSONBTest do
           source: :settings_json,
           virtual: false,
           redact: true,
-          load_in_query: true
+          load_in_query: true,
+          define_field: false
         )
 
       assert %{field: :settings, schema: Account} = params
@@ -110,19 +115,8 @@ defmodule EctoSpectral.JSONBTest do
       assert JSONB.cast(@dark, @settings) == {:ok, @dark}
     end
 
-    test "does not quietly replace a struct with the struct's defaults" do
-      # A struct is a map with atom keys, so reading one as a document finds
-      # none of the keys it looks for and fills every field from the defaults.
-      # Structs are only ever read as native terms, which is what prevents it.
-      assert {:ok, %Settings{theme: :dark, notifications: false, locale: "sv"}} =
-               JSONB.cast(@dark, @settings)
-
-      assert {:ok, %Settings{theme: :light, notifications: true, locale: nil}} =
-               Spectral.decode(@dark, Settings, :t, :json, [:pre_decoded])
-    end
-
     test "reports an invalid struct instead of falling back to the defaults" do
-      # The dangerous case: the struct is the right shape but the wrong
+      # The dangerous case: the value is the right shape but the wrong
       # contents, so encoding returns an error rather than raising. Reading it
       # as a document would succeed, with every field replaced by a default.
       invalid = %Settings{theme: :mauve, notifications: false, locale: "sv"}
@@ -132,6 +126,40 @@ defmodule EctoSpectral.JSONBTest do
 
       assert {:error, opts} = JSONB.cast(invalid, @settings)
       assert [%Spectral.Error{location: [:theme]}] = opts[:spectral_errors]
+    end
+
+    test "a map with atom keys is a term of the type, not a document" do
+      # The same hazard without a struct in sight. Reading this as a document
+      # matches none of its keys, so it would cast to the type's defaults and
+      # overwrite whatever the row already held.
+      assert JSONB.cast(%{theme: :dark, rows: 10}, @prefs) == {:ok, %{theme: :dark, rows: 10}}
+
+      assert {:ok, %{}} =
+               Spectral.decode(%{theme: :dark, rows: 10}, Prefs, :t, :json, [:pre_decoded])
+    end
+
+    test "reports an invalid map with atom keys" do
+      assert {:error, opts} = JSONB.cast(%{theme: :mauve, rows: 10}, @prefs)
+      assert [%Spectral.Error{}] = opts[:spectral_errors]
+    end
+
+    test "still decodes the document form of the same type" do
+      assert JSONB.cast(%{"theme" => "dark", "rows" => 10}, @prefs) ==
+               {:ok, %{theme: :dark, rows: 10}}
+    end
+
+    test "an atom key nested inside a document makes it a term, not a document" do
+      assert {:error, _} = JSONB.cast(%{"theme" => %{nested: true}}, @settings)
+    end
+
+    test "keeps fields a type does not expose" do
+      # `only` drops them on the way to the column, which is what the type
+      # asks for. Dropping them here too would lose data the caller still
+      # holds.
+      value = %Partial{name: "a", age: 30, secret: "s"}
+
+      assert JSONB.cast(value, @partial) == {:ok, value}
+      assert JSONB.dump(value, nil, @partial) == {:ok, %{"name" => "a"}}
     end
 
     test "answers with the term load/3 would return for the same value" do
@@ -197,6 +225,25 @@ defmodule EctoSpectral.JSONBTest do
       assert [%Spectral.Error{location: [:theme]}] = error.errors
     end
 
+    test "is no stricter than the type: an unrelated document loads as defaults" do
+      # load/3 catches a key that is present and wrong, not a document that
+      # has nothing to do with the type.
+      assert JSONB.load(%{"totally" => "unrelated"}, nil, @settings) == {:ok, %Settings{}}
+      assert JSONB.load(%{}, nil, @settings) == {:ok, %Settings{}}
+    end
+
+    test "bounds the size of the message, however deep the document nests" do
+      deep =
+        Enum.reduce(1..18, %{"x" => 1}, fn _, acc -> %{"a" => acc, "b" => acc, "c" => acc} end)
+
+      error =
+        assert_raise LoadError, fn ->
+          JSONB.load(%{"theme" => deep, "notifications" => true, "locale" => nil}, nil, @settings)
+        end
+
+      assert byte_size(error.message) < 1024
+    end
+
     test "falls back to Ecto's :error with on_load_error: :error" do
       assert JSONB.load(%{"theme" => "mauve"}, nil, @lenient) == :error
     end
@@ -239,8 +286,10 @@ defmodule EctoSpectral.JSONBTest do
     test "counts an integer and the same value as a float as a change" do
       # Ecto.Changeset drops a change that is equal?/3 to the stored value,
       # and 1 and 1.0 are different documents once they reach the column.
-      refute JSONB.equal?(%{v: 1}, %{v: 1.0}, @settings)
-      assert JSONB.equal?(%{v: 1.0}, %{v: 1.0}, @settings)
+      params = JSONB.init(module: Numbers, type: :t)
+
+      refute JSONB.equal?(%Numbers{value: 1}, %Numbers{value: 1.0}, params)
+      assert JSONB.equal?(%Numbers{value: 1.0}, %Numbers{value: 1.0}, params)
     end
   end
 

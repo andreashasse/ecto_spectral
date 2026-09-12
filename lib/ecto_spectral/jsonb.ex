@@ -20,8 +20,10 @@ defmodule EctoSpectral.JSONB do
 
     * `:module` - required. The module holding the type definition.
     * `:type` - required. The name of the type in that module, as an atom.
-      A Spectral type reference, `{:type, name, arity}` or `{:record, name}`,
-      also works, which is how you reach a type that takes parameters.
+      A Spectral type reference also works: `{:type, name, arity}` picks
+      between types that share a name, and `{:record, name}` names a record.
+      Neither supplies a type parameter; a type that takes one cannot be used
+      as a field.
     * `:on_load_error` - `:raise` (default) or `:error`. See "Errors" below.
 
   Any other option is rejected, apart from the ones `Ecto.Schema` itself adds
@@ -42,32 +44,40 @@ defmodule EctoSpectral.JSONB do
 
   ## What `cast/2` accepts
 
-  `cast/2` takes both the native term and the external JSON document, and
-  always answers with the term `load/3` would return for the same row:
+  `cast/2` takes both the native term and the external JSON document:
 
       Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
       Ecto.Changeset.cast(account, %{settings: %MyApp.Settings{theme: :dark}}, [:settings])
 
-  Two details make that work.
+  Which reading it uses comes down to shape. A `jsonb` column can only hand
+  back an object with string keys, an array, a string, a number, a boolean or
+  null, so a value carrying a struct, an atom key or an atom value anywhere
+  inside it can only be a term of the type, and the document reading is not
+  tried at all. That matters because reading such a value as a document
+  matches none of its keys and fills every field from the type's defaults,
+  which would silently replace what the caller passed.
 
-  A struct is only ever read as a native term. A JSON document is never a
-  struct, and a struct's keys are atoms, so reading one as a document would
-  match nothing and fill every field from the struct's defaults, silently
-  replacing the value the caller passed.
+  When the value could be either, and both readings claim it, the answer is
+  the one `load/3` would give. Some types accept the same value both ways
+  while meaning different things by it: with `:dark | String.t()`, `"dark"` is
+  a valid `String.t()` and also the encoding of `:dark`. Otherwise `cast/2`
+  would keep the string, `load/3` would answer `:dark`, and `equal?/3` would
+  report a change on every save.
 
-  Anything else that encodes successfully is a native term, and the value
-  returned is that term encoded and decoded again. Some types accept the same
-  value in both readings while meaning different things by it. `:dark |
-  String.t()` is the clearest case: `"dark"` is a valid `String.t()` and also
-  the encoding of `:dark`, so without this step `cast/2` would keep the
-  string, `load/3` would answer `:dark`, and `equal?/3` would report a change
-  on every save.
+  Nothing is re-encoded on the way through, so a type that exposes only some
+  of its struct's fields still casts to the whole struct. The fields it does
+  not expose are dropped by `dump/3`, where the type says they should be.
 
-  `cast/2` is as strict as the type and no stricter. Spectral ignores document
-  keys the type does not mention and fills fields the document omits from the
-  struct's defaults, so a form that posts `settings[them]` instead of
-  `settings[theme]` casts to the defaults rather than failing. Use
-  `Ecto.Changeset` validations for anything the type does not express.
+  ## Leniency
+
+  Neither `cast/2` nor `load/3` is stricter than the type. Spectral ignores
+  document keys the type does not mention and fills fields the document omits
+  from the struct's defaults, so a form that posts `settings[them]` instead of
+  `settings[theme]` casts to the defaults rather than failing, and a stored
+  document with no keys in common with the type loads as the defaults rather
+  than raising. What `load/3` catches is a key that is present and wrong, not
+  a document that is simply unrelated. Use `Ecto.Changeset` validations for
+  anything the type does not express.
 
   ## Errors
 
@@ -106,9 +116,11 @@ defmodule EctoSpectral.JSONB do
   the dumped value to the driver untouched. Other adapters make their own
   arrangements for `:map` and are neither tested nor supported.
 
-  `{:array, EctoSpectral.JSONB}` is not supported. It appears to work, but
-  Ecto hands the whole list to the driver as a single `jsonb` parameter rather
-  than as a `jsonb[]`. Use a type whose top level is a list instead.
+  `{:array, EctoSpectral.JSONB}` works, against a column declared
+  `add :col, {:array, :map}`. Ecto dumps the elements one at a time and
+  Postgres stores them as a real `jsonb[]`. Point it at a plain `jsonb` column
+  by mistake and the list is stored as a single JSON array instead, which
+  round trips but is not what the field says it is.
   """
 
   use Ecto.ParameterizedType
@@ -124,7 +136,7 @@ defmodule EctoSpectral.JSONB do
     :autogenerate,
     :default,
     :defaults,
-    :defaults_to_struct,
+    :define_field,
     :field,
     :foreign_key,
     :load_in_query,
@@ -170,11 +182,10 @@ defmodule EctoSpectral.JSONB do
   def cast(nil, _params), do: {:ok, nil}
 
   def cast(value, %{module: module, type: type}) do
-    case encode(value, module, type) do
-      {:ok, encoded} -> canonical(encoded, value, module, type)
-      {:error, errors} when is_struct(value) -> cast_error(errors)
-      {:error, _errors} -> cast_document(value, module, type)
-      :not_a_term -> cast_document(value, module, type)
+    if document_shaped?(value) do
+      cast_either(value, module, type)
+    else
+      cast_native(value, module, type)
     end
   end
 
@@ -217,35 +228,57 @@ defmodule EctoSpectral.JSONB do
     "#EctoSpectral.JSONB<#{inspect(module)}.#{type_name(type)}>"
   end
 
-  defp cast_document(value, module, type) do
-    case Spectral.decode(value, module, type, :json, [:pre_decoded]) do
-      {:ok, decoded} -> {:ok, decoded}
+  # The value cannot have come out of a JSON column, so the document reading is
+  # not tried at all. Trying it is what used to replace a value the caller
+  # passed with the type's defaults, since a document reading matches none of
+  # the atom keys and fills every field it did not find.
+  defp cast_native(value, module, type) do
+    case encode(value, module, type) do
+      {:ok, _encoded} -> {:ok, value}
       {:error, errors} -> cast_error(errors)
+      {:raised, exception} -> {:error, message: Exception.message(exception)}
+    end
+  end
+
+  # The value is shaped like a document, so it could be either reading. When
+  # both claim it, answer with the one `load/3` would give, so that a cast
+  # value and a loaded one are never two representations of the same row.
+  defp cast_either(value, module, type) do
+    encoded = encode(value, module, type)
+    decoded = Spectral.decode(value, module, type, :json, [:pre_decoded])
+
+    case {encoded, decoded} do
+      {{:ok, _}, {:ok, term}} -> {:ok, term}
+      {{:ok, _}, {:error, _}} -> {:ok, value}
+      {_, {:ok, term}} -> {:ok, term}
+      {_, {:error, errors}} -> cast_error(errors)
     end
   end
 
   defp cast_error(errors),
     do: {:error, message: format_errors(errors), spectral_errors: errors}
 
-  # Answer with the term load/3 would return, so a cast value and a loaded one
-  # are never two representations of the same row. Falling back to the value
-  # itself covers types Spectral encodes but cannot decode again; the value is
-  # valid either way, since encoding it succeeded.
-  defp canonical(encoded, value, module, type) do
-    case Spectral.decode(encoded, module, type, :json, [:pre_decoded]) do
-      {:ok, decoded} -> {:ok, decoded}
-      {:error, _errors} -> {:ok, value}
-    end
-  end
+  # Everything a JSON column can hand back: objects with string keys, arrays,
+  # strings, numbers, booleans and null. Anything else, a struct or an atom key
+  # or an atom value, can only be a term of the type.
+  defp document_shaped?(value) when is_binary(value) or is_number(value), do: true
+  defp document_shaped?(value) when is_boolean(value) or is_nil(value), do: true
+  defp document_shaped?(%_{}), do: false
 
-  # Encoding a value that is nowhere near the type raises rather than returning
-  # an error, and that raise is the only thing that means "not a term of this
-  # type at all". A genuine configuration problem, such as a module compiled
-  # without debug_info, raises from the decode attempt that follows instead.
+  defp document_shaped?(value) when is_map(value),
+    do: Enum.all?(value, fn {key, item} -> is_binary(key) and document_shaped?(item) end)
+
+  defp document_shaped?(value) when is_list(value), do: Enum.all?(value, &document_shaped?/1)
+  defp document_shaped?(_value), do: false
+
+  # Spectral raises rather than returning an error for a value far enough from
+  # the type, so both outcomes have to be handled. A configuration problem,
+  # such as a module compiled without debug_info, raises an ErlangError and is
+  # deliberately left to propagate.
   defp encode(value, module, type) do
     Spectral.encode(value, module, type, :json, [:pre_encoded])
   rescue
-    _ in [FunctionClauseError, BadMapError] -> :not_a_term
+    exception in [FunctionClauseError, BadMapError] -> {:raised, exception}
   end
 
   defp load_error(_errors, _value, %{on_load_error: :error}), do: :error
@@ -254,8 +287,7 @@ defmodule EctoSpectral.JSONB do
     raise LoadError,
       errors: errors,
       message: """
-      cannot load #{inspect(value, printable_limit: 256, limit: 20)} \
-      as #{inspect(module)}.#{type_name(type)}#{field_suffix(params)}
+      cannot load #{describe(value)} as #{inspect(module)}.#{type_name(type)}#{field_suffix(params)}
 
       #{format_errors(errors)}\
       """
@@ -266,6 +298,15 @@ defmodule EctoSpectral.JSONB do
 
   defp field_suffix(%{schema: schema, field: field}),
     do: " for field #{inspect(field)} in #{inspect(schema)}"
+
+  # `:limit` bounds how wide a document is printed but not how deep, and jsonb
+  # nests as far as it likes, so the rendered string is cut to a fixed size.
+  defp describe(value) do
+    case inspect(value, printable_limit: 256, limit: 20) do
+      <<head::binary-size(512), _rest::binary>> -> head <> "..."
+      whole -> whole
+    end
+  end
 
   defp type_name(type) when is_atom(type), do: Atom.to_string(type)
   defp type_name(type), do: inspect(type)
@@ -279,8 +320,8 @@ defmodule EctoSpectral.JSONB do
 
       unknown ->
         raise ArgumentError,
-              "EctoSpectral.JSONB got unknown option(s) #{inspect(unknown)}, " <>
-                "expected one of #{inspect(@own_options)}"
+              "EctoSpectral.JSONB got unknown option(s) #{inspect(unknown)}, expected one of " <>
+                "#{inspect(@own_options)} or an option Ecto.Schema accepts on a field"
     end
   end
 

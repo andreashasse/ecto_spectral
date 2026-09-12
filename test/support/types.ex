@@ -67,3 +67,25 @@ defmodule EctoSpectral.Test.Numbers do
 
   @type t :: %__MODULE__{value: float()}
 end
+
+defmodule EctoSpectral.Test.Prefs do
+  @moduledoc "A plain map type with atom keys, so the native form is not document-shaped."
+  use Spectral
+
+  @type t :: %{optional(:theme) => :light | :dark, optional(:rows) => non_neg_integer()}
+end
+
+defmodule EctoSpectral.Test.Partial do
+  @moduledoc "A type that exposes only some of its struct's fields."
+  use Spectral
+
+  defstruct [:name, :age, :secret]
+
+  spectral(only: [:name])
+
+  @type t :: %__MODULE__{
+          name: String.t(),
+          age: non_neg_integer() | nil,
+          secret: String.t() | nil
+        }
+end

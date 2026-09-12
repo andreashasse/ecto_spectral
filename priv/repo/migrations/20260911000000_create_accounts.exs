@@ -10,8 +10,6 @@ defmodule EctoSpectral.TestRepo.Migrations.CreateAccounts do
       add :tags, :map
       add :lenient_settings, :map
       add :profile, :map
-      add :mode, :map
-      add :number, :map
     end
   end
 end

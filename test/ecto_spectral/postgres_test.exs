@@ -11,6 +11,7 @@ defmodule EctoSpectral.PostgresTest do
   alias EctoSpectral.LoadError
   alias EctoSpectral.Test.Account
   alias EctoSpectral.Test.Numbers
+  alias EctoSpectral.Test.Partial
   alias EctoSpectral.Test.Settings
   alias EctoSpectral.Test.Shapes
   alias EctoSpectral.Test.Tags
@@ -129,6 +130,32 @@ defmodule EctoSpectral.PostgresTest do
           set: [settings: %Settings{theme: :mauve}]
         )
       end
+    end
+
+    test "update_all with an atom-keyed map writes it rather than the defaults" do
+      # Restating a row's own value with atom keys used to read as a document,
+      # match none of the keys, and overwrite the row with the type's defaults.
+      account = insert!(%{prefs: %{theme: :dark, rows: 10}})
+
+      {1, nil} =
+        Repo.update_all(from(a in Account, where: a.id == ^account.id),
+          set: [prefs: %{theme: :light, rows: 20}]
+        )
+
+      assert raw(account, "prefs") == %{"theme" => "light", "rows" => 20}
+      assert reload(account).prefs == %{theme: :light, rows: 20}
+    end
+
+    test "an atom-keyed map that does not match the type is reported" do
+      account = insert!(%{prefs: %{theme: :dark}})
+
+      assert_raise Ecto.Query.CastError, fn ->
+        Repo.update_all(from(a in Account, where: a.id == ^account.id),
+          set: [prefs: %{theme: :mauve}]
+        )
+      end
+
+      assert raw(account, "prefs") == %{"theme" => "dark"}
     end
 
     test "get_by finds a row by the dumped document" do
@@ -258,6 +285,57 @@ defmodule EctoSpectral.PostgresTest do
                Repo.query!("SELECT id FROM accounts WHERE shape->>'kind' = 'circle'")
 
       assert id == account.id
+    end
+  end
+
+  describe "an array of the type" do
+    @settings_list [
+      %Settings{theme: :dark, notifications: false, locale: "sv"},
+      %Settings{}
+    ]
+
+    test "the column is a real jsonb array, one document per element" do
+      account = insert!(%{many_settings: @settings_list})
+
+      assert %{rows: [[2]]} =
+               Repo.query!("SELECT array_length(many_settings, 1) FROM accounts WHERE id = $1", [
+                 account.id
+               ])
+
+      assert [%{"theme" => "dark"} | _] = raw(account, "many_settings")
+    end
+
+    test "round trips" do
+      account = insert!(%{many_settings: @settings_list})
+
+      assert reload(account).many_settings == @settings_list
+    end
+
+    test "an empty array and a NULL array are different" do
+      empty = insert!(%{many_settings: []})
+      missing = insert!(%{})
+
+      assert reload(empty).many_settings == []
+      assert reload(missing).many_settings == nil
+    end
+  end
+
+  describe "a type that exposes only some of its struct's fields" do
+    test "the column holds only the exposed fields" do
+      account = insert!(%{partial: %Partial{name: "ada", age: 36, secret: "s"}})
+
+      assert raw(account, "partial") == %{"name" => "ada"}
+    end
+
+    test "casting keeps the fields the column will not hold" do
+      changeset =
+        Account.changeset(%Account{}, %{
+          partial: %Partial{name: "ada", age: 36, secret: "s"},
+          required_settings: @light
+        })
+
+      assert Changeset.get_change(changeset, :partial) ==
+               %Partial{name: "ada", age: 36, secret: "s"}
     end
   end
 
