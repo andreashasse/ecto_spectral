@@ -192,12 +192,17 @@ whose top level is a list instead.
 The tests write and read actual `jsonb`, so they need a real Postgres instance:
 
 ```bash
-docker compose up -d
-mix test
+make db
+make test
 ```
 
-`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` and `PGDATABASE` override the connection. `mix test`
-creates and migrates the test database first.
+`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` and `PGDATABASE` override the connection, and
+`make db` publishes the container on `PGPORT` so an existing Postgres on 5432 does not get in
+the way. `mix test` creates and migrates the test database first.
+
+`make ci` runs everything CI runs: compile, tests, Credo, Dialyzer, formatting, `mix docs` and
+`mix hex.build`. `make format` rewrites files, `make shell` opens IEx, and `make db_stop`
+takes the container down.
 
 ## License
 

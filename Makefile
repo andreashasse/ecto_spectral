@@ -1,0 +1,53 @@
+.PHONY: ci compile check_format format credo type_check test docs package db db_stop shell release
+
+# The test suite needs a real Postgres instance. Start one with `make db`
+# before `make test` or `make ci`; CI provides its own as a service container.
+
+ci: compile test credo type_check check_format docs package
+
+compile:
+	mix compile --force --warnings-as-errors
+
+check_format:
+	mix format --check-formatted
+
+format:
+	mix format
+
+credo:
+	mix credo --strict
+
+type_check:
+	mix dialyzer
+
+test:
+	mix test --warnings-as-errors
+
+docs:
+	mix docs
+
+package:
+	mix hex.build
+	@rm -f ecto_spectral-*.tar
+
+db:
+	docker compose up -d --wait
+
+db_stop:
+	docker compose down
+
+shell:
+	iex -S mix
+
+release:
+	@echo "Last 5 tags:"
+	@git tag --sort=-version:refname | head -n 5
+	@echo ""
+	@read -r -p "Enter the next tag (e.g., 1.0.0): " tag && [ -n "$$tag" ] || { echo "Tag cannot be empty. Aborted."; exit 1; }; \
+	read -r -p "Did you update the README install instructions? (Y/N) " a && [ "$$a" = "Y" ] || { echo "Aborted."; exit 1; }; \
+	git tag "$$tag" && \
+	mix compile && \
+	mix hex.publish && \
+	git push origin "$$tag" && \
+	gh release create "$$tag" --title "v$$tag" --notes "$$(sed -n "/## \[$$tag\]/,/## \[/p" CHANGELOG.md | sed '$$d' | tail -n +2)" && \
+	echo "Released and tagged as $$tag with GitHub release"
