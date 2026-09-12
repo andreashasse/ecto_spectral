@@ -46,3 +46,24 @@ defmodule EctoSpectral.Test.Tags do
   @type names :: [String.t()]
   @type tags :: [Tag.t()]
 end
+
+defmodule EctoSpectral.Test.Modes do
+  @moduledoc """
+  A union whose two branches accept the same JSON document.
+
+  `"dark"` is a valid `String.t()` and also the encoding of `:dark`, so the
+  native and document readings of it disagree.
+  """
+  use Spectral
+
+  @type mode :: :dark | String.t()
+end
+
+defmodule EctoSpectral.Test.Numbers do
+  @moduledoc "Floats, which Postgres normalises through `numeric` in a jsonb column."
+  use Spectral
+
+  defstruct [:value]
+
+  @type t :: %__MODULE__{value: float()}
+end

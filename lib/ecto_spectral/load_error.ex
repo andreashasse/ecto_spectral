@@ -11,5 +11,16 @@ defmodule EctoSpectral.LoadError do
   The `:errors` field carries the `Spectral.Error` structs that caused it.
   """
 
+  @type t :: %__MODULE__{
+          message: String.t() | nil,
+          errors: [Spectral.Error.t()] | nil
+        }
+
   defexception [:message, :errors]
+
+  @impl true
+  def message(%__MODULE__{message: nil}),
+    do: "a stored document did not match its Spectral type"
+
+  def message(%__MODULE__{message: message}), do: message
 end

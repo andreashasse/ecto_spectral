@@ -65,7 +65,7 @@ jobs:
         run: mix compile --force --warnings-as-errors
 
       - name: Run tests
-        run: mix test
+        run: mix test --warnings-as-errors
 
       - name: Run Credo
         run: mix credo --strict
@@ -86,3 +86,9 @@ jobs:
 
       - name: Check formatting
         run: mix format --check-formatted
+
+      - name: Build docs
+        run: mix docs
+
+      - name: Build the package
+        run: mix hex.build

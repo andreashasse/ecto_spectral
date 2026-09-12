@@ -9,6 +9,8 @@ defmodule EctoSpectral.JSONBTest do
 
   alias EctoSpectral.JSONB
   alias EctoSpectral.LoadError
+  alias EctoSpectral.Test.Modes
+  alias EctoSpectral.Test.Numbers
   alias EctoSpectral.Test.Settings
   alias EctoSpectral.Test.Shapes
   alias EctoSpectral.Test.Tags
@@ -16,6 +18,7 @@ defmodule EctoSpectral.JSONBTest do
   @settings JSONB.init(module: Settings, type: :t)
   @lenient JSONB.init(module: Settings, type: :t, on_load_error: :error)
   @names JSONB.init(module: Tags, type: :names)
+  @mode JSONB.init(module: Modes, type: :mode)
 
   @dark %Settings{theme: :dark, notifications: false, locale: "sv"}
   @dark_json %{"theme" => "dark", "notifications" => false, "locale" => "sv"}
@@ -45,6 +48,35 @@ defmodule EctoSpectral.JSONBTest do
       assert_raise ArgumentError, ~r/must be :raise or :error/, fn ->
         JSONB.init(module: Settings, type: :t, on_load_error: :ignore)
       end
+    end
+
+    test "rejects an unknown option rather than ignoring it" do
+      # A typo in the one option whose whole job is to be an escape hatch
+      # would otherwise leave the default silently in place.
+      assert_raise ArgumentError, ~r/unknown option\(s\) \[:on_load_errors\]/, fn ->
+        JSONB.init(module: Settings, type: :t, on_load_errors: :error)
+      end
+    end
+
+    test "accepts the field options Ecto merges in" do
+      params =
+        JSONB.init(
+          module: Settings,
+          type: :t,
+          field: :settings,
+          schema: Account,
+          default: nil,
+          source: :settings_json,
+          virtual: false,
+          redact: true,
+          load_in_query: true
+        )
+
+      assert %{field: :settings, schema: Account} = params
+    end
+
+    test "accepts a Spectral type reference, which is how a type takes parameters" do
+      assert %{type: {:type, :t, 0}} = JSONB.init(module: Numbers, type: {:type, :t, 0})
     end
   end
 
@@ -79,14 +111,49 @@ defmodule EctoSpectral.JSONBTest do
     end
 
     test "does not quietly replace a struct with the struct's defaults" do
-      # A struct is a map with atom keys, so decoding one finds none of the
-      # keys it looks for and fills every field from the defaults. Validating
-      # the value as a native term first is what prevents that.
+      # A struct is a map with atom keys, so reading one as a document finds
+      # none of the keys it looks for and fills every field from the defaults.
+      # Structs are only ever read as native terms, which is what prevents it.
       assert {:ok, %Settings{theme: :dark, notifications: false, locale: "sv"}} =
                JSONB.cast(@dark, @settings)
 
       assert {:ok, %Settings{theme: :light, notifications: true, locale: nil}} =
                Spectral.decode(@dark, Settings, :t, :json, [:pre_decoded])
+    end
+
+    test "reports an invalid struct instead of falling back to the defaults" do
+      # The dangerous case: the struct is the right shape but the wrong
+      # contents, so encoding returns an error rather than raising. Reading it
+      # as a document would succeed, with every field replaced by a default.
+      invalid = %Settings{theme: :mauve, notifications: false, locale: "sv"}
+
+      assert {:ok, %Settings{theme: :light, locale: nil}} =
+               Spectral.decode(invalid, Settings, :t, :json, [:pre_decoded])
+
+      assert {:error, opts} = JSONB.cast(invalid, @settings)
+      assert [%Spectral.Error{location: [:theme]}] = opts[:spectral_errors]
+    end
+
+    test "answers with the term load/3 would return for the same value" do
+      # "dark" is a valid String.t() and also the encoding of :dark, so both
+      # readings of it succeed and disagree. Keeping the string here would
+      # make the same row read back differently after a reload.
+      assert JSONB.cast("dark", @mode) == {:ok, :dark}
+      assert JSONB.load("dark", nil, @mode) == {:ok, :dark}
+      assert JSONB.cast(:dark, @mode) == {:ok, :dark}
+    end
+
+    test "leaves a value alone when only one reading claims it" do
+      assert JSONB.cast("other", @mode) == {:ok, "other"}
+      assert JSONB.load("other", nil, @mode) == {:ok, "other"}
+    end
+
+    test "is no stricter than the type: an unmatched document casts to defaults" do
+      # Spectral ignores keys the type does not mention and fills omitted
+      # fields from the struct defaults, so a misspelled form field is not an
+      # error here. Ecto.Changeset validations are the place for that.
+      assert JSONB.cast(%{"them" => "dark"}, @settings) == {:ok, %Settings{}}
+      assert JSONB.cast(%{}, @settings) == {:ok, %Settings{}}
     end
 
     test "keeps Spectral's detail, which load/3 and dump/3 cannot" do
@@ -149,10 +216,6 @@ defmodule EctoSpectral.JSONBTest do
       assert JSONB.dump(["a", "b"], nil, @names) == {:ok, ["a", "b"]}
       assert JSONB.load(["a", "b"], nil, @names) == {:ok, ["a", "b"]}
     end
-
-    test "still reports :map as the Ecto type" do
-      assert JSONB.type(@names) == :map
-    end
   end
 
   describe "unions" do
@@ -166,17 +229,54 @@ defmodule EctoSpectral.JSONBTest do
     end
   end
 
-  test "equal?/3 compares the decoded terms" do
-    assert JSONB.equal?(@dark, @dark, @settings)
-    refute JSONB.equal?(@dark, %Settings{}, @settings)
-    assert JSONB.equal?(nil, nil, @settings)
+  describe "equal?/3" do
+    test "compares the decoded terms" do
+      assert JSONB.equal?(@dark, @dark, @settings)
+      refute JSONB.equal?(@dark, %Settings{}, @settings)
+      assert JSONB.equal?(nil, nil, @settings)
+    end
+
+    test "counts an integer and the same value as a float as a change" do
+      # Ecto.Changeset drops a change that is equal?/3 to the stored value,
+      # and 1 and 1.0 are different documents once they reach the column.
+      refute JSONB.equal?(%{v: 1}, %{v: 1.0}, @settings)
+      assert JSONB.equal?(%{v: 1.0}, %{v: 1.0}, @settings)
+    end
   end
 
   test "embed_as/2 dumps, because the decoded term is not JSON on its own" do
     assert JSONB.embed_as(:json, @settings) == :dump
   end
 
-  test "format/1 names the type behind the field" do
-    assert JSONB.format(@settings) =~ "EctoSpectral.Test.Settings.t"
+  describe "format/1" do
+    test "names the type behind the field" do
+      assert JSONB.format(@settings) =~ "EctoSpectral.Test.Settings.t"
+    end
+
+    test "survives a type reference, which Ecto renders while building errors" do
+      params = JSONB.init(module: Numbers, type: {:type, :t, 0})
+
+      assert JSONB.format(params) =~ "{:type, :t, 0}"
+    end
+  end
+
+  describe "a Spectral type reference as :type" do
+    @reference JSONB.init(module: Numbers, type: {:type, :t, 0})
+
+    test "casts, dumps and loads" do
+      value = %Numbers{value: 1.5}
+
+      assert JSONB.cast(%{"value" => 1.5}, @reference) == {:ok, value}
+      assert JSONB.dump(value, nil, @reference) == {:ok, %{"value" => 1.5}}
+      assert JSONB.load(%{"value" => 1.5}, nil, @reference) == {:ok, value}
+    end
+  end
+
+  describe "EctoSpectral.LoadError" do
+    test "has a message even when raised bare" do
+      error = assert_raise LoadError, fn -> raise LoadError end
+
+      assert Exception.message(error) =~ "did not match its Spectral type"
+    end
   end
 end

@@ -56,7 +56,7 @@ def deps do
 end
 ```
 
-Requires Erlang/OTP 27 or later, which is where Spectral's `json` module comes from.
+Requires Erlang/OTP 27 or later, which is what Spectral itself requires.
 
 Postgrex needs a JSON library configured to encode `jsonb` parameters. Phoenix projects
 already have this; otherwise point it at Elixir's built-in module:
@@ -70,8 +70,11 @@ config :postgrex, :json_library, JSON
 | Option | | |
 |---|---|---|
 | `:module` | required | The module holding the type definition |
-| `:type` | required | The name of the type in that module, as an atom |
+| `:type` | required | The name of the type in that module, as an atom, or a Spectral type reference such as `{:type, :t, 0}` |
 | `:on_load_error` | `:raise` (default) or `:error` | What a load failure does |
+
+Anything else is rejected, apart from the options `Ecto.Schema` itself adds to a field. A
+typo in `:on_load_error` is a compile-time error rather than a silent default.
 
 ## How the callbacks behave
 
@@ -82,6 +85,10 @@ column arrives as `nil` in `cast/2`, `load/3` and `dump/3` alike. A plain `Ecto.
 sees `nil`, which makes this easy to miss when porting one. All three pass it through.
 A `NOT NULL` column is enforced by the database and by `validate_required/3`, not by the type.
 
+A `jsonb` document that is itself `null` is a separate thing from a SQL `NULL`, but not by
+the time it reaches `load/3`: the driver decodes both to `nil`. Such a row loads as `nil`
+without being checked against the type, and writing the field replaces it with a real `NULL`.
+
 ### What `cast/2` accepts
 
 `cast/2` takes both the native term and the external JSON document:
@@ -91,9 +98,21 @@ Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
 Ecto.Changeset.cast(account, %{settings: %MyApp.Settings{theme: :dark}}, [:settings])
 ```
 
-It checks the native reading first. That order is not cosmetic. A struct is a map with atom
-keys, so decoding one as a document finds none of the keys it is looking for and fills every
-field from the struct defaults, which would silently replace the value you passed.
+A struct is only ever read as a native term. A JSON document is never a struct, and a
+struct's keys are atoms, so reading one as a document would match nothing and fill every
+field from the struct's defaults, silently replacing the value you passed.
+
+Anything else that encodes successfully is a native term, and what you get back is that term
+encoded and decoded again, so `cast/2` always answers with the value `load/3` would return
+for the same row. Some types accept the same value in both readings while meaning different
+things by it. `:dark | String.t()` is the clearest case: `"dark"` is a valid `String.t()` and
+also the encoding of `:dark`. Without that step `cast/2` would keep the string, `load/3`
+would answer `:dark`, and the field would report a change on every save.
+
+`cast/2` is as strict as the type and no stricter. Spectral ignores document keys the type
+does not mention and fills omitted fields from the struct defaults, so a form posting
+`settings[them]` instead of `settings[theme]` casts to the defaults rather than failing. Put
+anything the type does not express into `Ecto.Changeset` validations.
 
 ### Errors
 
@@ -120,6 +139,12 @@ failure means the column already holds data that does not match the declared typ
 a data bug rather than user input, so this type raises `EctoSpectral.LoadError` instead and
 carries the full error list on the exception. Pass `on_load_error: :error` to get Ecto's
 `ArgumentError` back.
+
+One case is worth knowing before relying on that. Postgres stores `jsonb` numbers as
+`numeric`, which drops exponent notation, so a `float()` of `1.0e10` reads back as the
+integer `10000000000` and stops matching `float()`. A column holding large-magnitude floats
+can fail to load data this type itself wrote. `on_load_error: :error` only changes which
+exception you get.
 
 ### Embedded schemas
 
@@ -152,6 +177,16 @@ An `Ecto.ParameterizedType` cannot pick the type from another column, since `loa
 only the column value. When the discriminator lives in a sibling column, leave the payload as
 a plain `:map` and call `Spectral.decode/5` yourself. Spectral's README covers both patterns.
 
+## Scope
+
+Tested against Postgres, where `:map` means `jsonb` and the adapter hands the dumped value
+to the driver untouched. Other adapters make their own arrangements for `:map` and are
+neither tested nor supported.
+
+`{:array, EctoSpectral.JSONB}` is not supported. It appears to work, but Ecto passes the
+whole list to the driver as a single `jsonb` parameter rather than as a `jsonb[]`. Use a type
+whose top level is a list instead.
+
 ## Running the tests
 
 The tests write and read actual `jsonb`, so they need a real Postgres instance:
@@ -162,7 +197,7 @@ mix test
 ```
 
 `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` and `PGDATABASE` override the connection. `mix test`
-drops, creates and migrates the test database first.
+creates and migrates the test database first.
 
 ## License
 

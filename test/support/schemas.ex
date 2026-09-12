@@ -17,6 +17,8 @@ defmodule EctoSpectral.Test.Account do
 
   import Ecto.Changeset
 
+  alias EctoSpectral.Test.Modes
+  alias EctoSpectral.Test.Numbers
   alias EctoSpectral.Test.Settings
   alias EctoSpectral.Test.Shapes
   alias EctoSpectral.Test.Tags
@@ -33,10 +35,13 @@ defmodule EctoSpectral.Test.Account do
       type: :t,
       on_load_error: :error
 
+    field :mode, EctoSpectral.JSONB, module: Modes, type: :mode
+    field :number, EctoSpectral.JSONB, module: Numbers, type: {:type, :t, 0}
+
     embeds_one :profile, EctoSpectral.Test.Profile, on_replace: :update
   end
 
-  @fields ~w(settings required_settings shape names tags lenient_settings)a
+  @fields ~w(settings required_settings shape names tags lenient_settings mode number)a
 
   def changeset(account, params) do
     account

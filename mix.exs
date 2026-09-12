@@ -18,15 +18,12 @@ defmodule EctoSpectral.MixProject do
       source_url: @source_url,
       elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
-      preferred_cli_env: [test: :test],
       dialyzer: [plt_add_apps: [:ex_unit, :mix], plt_local_path: "priv/plts"]
     ]
   end
 
   def application do
-    [
-      extra_applications: [:logger]
-    ]
+    []
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -34,7 +31,7 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      {:spectral, "~> 0.13"},
+      {:spectral, "~> 0.13.0"},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},
@@ -47,7 +44,7 @@ defmodule EctoSpectral.MixProject do
 
   defp aliases do
     [
-      test: ["ecto.drop --quiet", "ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
     ]
   end
 
@@ -68,7 +65,8 @@ defmodule EctoSpectral.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md"]
+      extras: ["README.md", "CHANGELOG.md"],
+      source_ref: "v#{@version}"
     ]
   end
 end

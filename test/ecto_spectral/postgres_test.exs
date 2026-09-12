@@ -10,6 +10,7 @@ defmodule EctoSpectral.PostgresTest do
   alias Ecto.Changeset
   alias EctoSpectral.LoadError
   alias EctoSpectral.Test.Account
+  alias EctoSpectral.Test.Numbers
   alias EctoSpectral.Test.Settings
   alias EctoSpectral.Test.Shapes
   alias EctoSpectral.Test.Tags
@@ -32,6 +33,14 @@ defmodule EctoSpectral.PostgresTest do
     value
   end
 
+  defp corrupt!(account, column) do
+    Repo.query!(~s|UPDATE accounts SET #{column} = '{"theme":"mauve"}'::jsonb WHERE id = $1|, [
+      account.id
+    ])
+
+    account
+  end
+
   defp column_type(column) do
     %{rows: [[type]]} =
       Repo.query!(
@@ -44,7 +53,9 @@ defmodule EctoSpectral.PostgresTest do
 
   describe "the column" do
     test "is jsonb, not text or json" do
-      assert column_type("settings") == "jsonb"
+      for column <- ~w(settings required_settings shape names tags profile) do
+        assert column_type(column) == "jsonb"
+      end
     end
   end
 
@@ -91,6 +102,57 @@ defmodule EctoSpectral.PostgresTest do
 
       assert [%Account{settings: settings}] = Repo.all(Account)
       assert settings == @dark
+    end
+
+    test "update_all casts the value it is given" do
+      account = insert!(%{settings: @light})
+
+      {1, nil} =
+        Repo.update_all(from(a in Account, where: a.id == ^account.id), set: [settings: @dark])
+
+      assert reload(account).settings == @dark
+
+      assert raw(account, "settings") == %{
+               "theme" => "dark",
+               "notifications" => false,
+               "locale" => "sv"
+             }
+    end
+
+    test "update_all reports a value that does not match the type" do
+      account = insert!(%{settings: @light})
+
+      # update_all casts its set-values, so this is the path that used to
+      # write the struct's defaults without complaint.
+      assert_raise Ecto.Query.CastError, ~r/cannot be cast/, fn ->
+        Repo.update_all(from(a in Account, where: a.id == ^account.id),
+          set: [settings: %Settings{theme: :mauve}]
+        )
+      end
+    end
+
+    test "get_by finds a row by the dumped document" do
+      account = insert!(%{settings: @dark})
+
+      assert Repo.get_by(Account, settings: @dark).id == account.id
+    end
+
+    test "stream loads the same values as all/1" do
+      account = insert!(%{settings: @dark})
+
+      streamed =
+        Repo.transaction(fn -> Account |> Repo.stream() |> Enum.map(& &1.settings) end)
+
+      assert {:ok, [@dark]} = streamed
+      assert reload(account).settings == @dark
+    end
+
+    test "force_change writes a value equal to the stored one" do
+      account = insert!(%{settings: @dark})
+
+      changeset = account |> Changeset.change() |> Changeset.force_change(:settings, @dark)
+
+      assert Repo.update!(changeset).settings == @dark
     end
 
     test "the database can query inside the document" do
@@ -199,6 +261,28 @@ defmodule EctoSpectral.PostgresTest do
     end
   end
 
+  describe "a value both readings of the type accept" do
+    test "the cast value and the loaded value agree" do
+      changeset =
+        Account.changeset(%Account{}, %{"mode" => "dark", "required_settings" => @light})
+
+      account = Repo.insert!(changeset)
+
+      assert Changeset.get_change(changeset, :mode) == :dark
+      assert account.mode == :dark
+      assert reload(account).mode == :dark
+      assert raw(account, "mode") == "dark"
+    end
+
+    test "re-submitting the loaded value is not a change" do
+      account = insert!(%{mode: "dark"}) |> reload()
+
+      changeset = Account.changeset(account, %{"mode" => "dark"})
+
+      assert changeset.changes == %{}
+    end
+  end
+
   describe "inside an embedded schema" do
     # embed_as/2 answers :dump, because the decoded term is a struct with atom
     # keys and atom values, which is not JSON on its own.
@@ -219,14 +303,6 @@ defmodule EctoSpectral.PostgresTest do
   end
 
   describe "data in the column that does not match the type" do
-    defp corrupt!(account, column) do
-      Repo.query!(~s|UPDATE accounts SET #{column} = '{"theme":"mauve"}'::jsonb WHERE id = $1|, [
-        account.id
-      ])
-
-      account
-    end
-
     test "raises EctoSpectral.LoadError by default" do
       account = insert!(%{settings: @dark}) |> corrupt!("settings")
 
@@ -241,6 +317,77 @@ defmodule EctoSpectral.PostgresTest do
       error = assert_raise ArgumentError, fn -> reload(account) end
       assert error.message =~ "cannot load"
       assert error.message =~ ":lenient_settings"
+    end
+  end
+
+  describe "a jsonb document that is itself null" do
+    test "loads as nil, because the driver cannot distinguish it from SQL NULL" do
+      account = insert!(%{settings: @dark})
+      Repo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
+
+      assert %{rows: [["null", false]]} =
+               Repo.query!(
+                 "SELECT jsonb_typeof(settings), settings IS NULL FROM accounts WHERE id = $1",
+                 [account.id]
+               )
+
+      # It never reaches Spectral, so it is not checked against the type.
+      assert reload(account).settings == nil
+    end
+
+    test "writing the field replaces it with a real NULL" do
+      account = insert!(%{settings: @dark})
+      Repo.query!("UPDATE accounts SET settings = 'null'::jsonb WHERE id = $1", [account.id])
+
+      # It loaded as nil, so setting nil is not a change; force the write.
+      updated =
+        account
+        |> reload()
+        |> Changeset.change()
+        |> Changeset.force_change(:settings, nil)
+        |> Repo.update!()
+
+      assert %{rows: [[nil, true]]} =
+               Repo.query!(
+                 "SELECT jsonb_typeof(settings), settings IS NULL FROM accounts WHERE id = $1",
+                 [updated.id]
+               )
+    end
+  end
+
+  describe "floats, which Postgres normalises through numeric" do
+    test "an ordinary float round trips" do
+      account = insert!(%{number: %Numbers{value: 2.5}})
+
+      assert reload(account).number == %Numbers{value: 2.5}
+    end
+
+    test "a float in exponent notation comes back as an integer and no longer loads" do
+      # Postgres stores jsonb numbers as numeric, which drops the exponent, so
+      # 1.0e10 is read back as 10000000000 and stops matching float().
+      account = insert!(%{number: %Numbers{value: 1.0e10}})
+
+      assert raw(account, "number") == %{"value" => 10_000_000_000}
+      assert_raise LoadError, fn -> reload(account) end
+    end
+  end
+
+  describe "a field whose :type is a Spectral type reference" do
+    test "round trips" do
+      account = insert!(%{number: %Numbers{value: 1.5}})
+
+      assert reload(account).number == %Numbers{value: 1.5}
+    end
+
+    test "renders in the error Ecto builds from format/1" do
+      account = insert!(%{number: %Numbers{value: 1.5}})
+
+      Repo.query!(~s|UPDATE accounts SET number = '{"value":"x"}'::jsonb WHERE id = $1|, [
+        account.id
+      ])
+
+      error = assert_raise LoadError, fn -> reload(account) end
+      assert error.message =~ "{:type, :t, 0}"
     end
   end
 
