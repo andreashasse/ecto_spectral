@@ -31,13 +31,33 @@ Repo.one!(MyApp.Account).settings
 #=> %MyApp.Settings{theme: :dark, notifications: true, locale: nil}
 ```
 
-The column is `:map` in the migration, which Postgres renders as `jsonb`:
+`:map` is Ecto's name for the column; Postgres renders it as `jsonb`:
 
 ```elixir
-create table(:accounts) do
-  add :settings, :map
+defmodule MyApp.Repo.Migrations.CreateAccounts do
+  use Ecto.Migration
+
+  def change do
+    create table(:accounts) do
+      add :settings, :map
+    end
+  end
 end
 ```
+
+## Which callback goes which way
+
+A `jsonb` column never hands Elixir a JSON string. The driver does its own serialization, so
+the callbacks meet it already parsed.
+
+| | Runs | Direction |
+|---|---|---|
+| `dump/3` | on the way to the column | encodes a term of the type into what the driver serializes |
+| `load/3` | on the way back | decodes the document the driver parsed into a term of the type |
+| `cast/2` | on the way in from outside | decodes too, despite its result being bound for the column |
+
+`cast/2` is not the encoding step. `dump/3` is, and it runs later. These are Spectral's
+`:pre_encoded` and `:pre_decoded` options exactly.
 
 ## Why this is a separate library
 
@@ -91,29 +111,43 @@ without being checked against the type, and writing the field replaces it with a
 
 ### What `cast/2` accepts
 
-`cast/2` takes both the native term and the external JSON document:
+`cast/2` is handed two different kinds of value, depending on who is calling. A controller or
+a form sends a **document**: string keys, string values, straight from JSON. Your own code
+sends a **term**: the struct or map the type describes. Both work:
 
 ```elixir
 Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
 Ecto.Changeset.cast(account, %{settings: %MyApp.Settings{theme: :dark}}, [:settings])
 ```
 
-Which reading it uses comes down to shape. A `jsonb` column can only hand back an object with
-string keys, an array, a string, a number, a boolean or null, so a value carrying a struct, an
-atom key or an atom value anywhere inside it can only be a term of the type, and the document
-reading is not tried at all. That matters because reading such a value as a document matches
-none of its keys and fills every field from the type's defaults, which would silently replace
-what you passed.
+A document has to be decoded. A term is already what the schema wants and is passed through.
+So `cast/2` has to work out which one it is looking at, and it does that by shape.
 
-When the value could be either, and both readings claim it, the answer is the one `load/3`
-would give. Some types accept the same value both ways while meaning different things by it:
-with `:dark | String.t()`, `"dark"` is a valid `String.t()` and also the encoding of `:dark`.
-Otherwise `cast/2` would keep the string, `load/3` would answer `:dark`, and the field would
-report a change on every save.
+A `jsonb` column can only hand back an object with string keys, an array, a string, a number,
+a boolean or null. Nothing else ever came from JSON. A struct, an atom key or an atom value
+anywhere inside the value therefore rules out the document reading, and `cast/2` does not
+attempt it:
 
-Nothing is re-encoded on the way through, so a type that exposes only some of its struct's
-fields still casts to the whole struct. The fields it does not expose are dropped by `dump/3`,
-where the type says they should be.
+```elixir
+cast(%MyApp.Settings{theme: :dark}, params)   # term: a struct
+cast(%{theme: :dark}, params)                 # term: atom keys
+cast(%{"theme" => "dark"}, params)            # could be either
+```
+
+That distinction is load-bearing rather than tidy. Spectral fills fields a document leaves out
+from the type's defaults, so decoding a term finds none of the keys it wants, succeeds anyway,
+and hands back all defaults. Reading `%{theme: :dark}` as a document would quietly turn it
+into `%{}`.
+
+When the shape allows both, `cast/2` tries both. If only one succeeds, that is the answer. If
+both succeed it takes the decoded one, because that is what `load/3` will return for the same
+row and the two must agree. A type like `:dark | String.t()` needs this: `"dark"` is a valid
+`String.t()` and is also what `:dark` encodes to, so keeping the string would mean the field
+read back differently after a reload and reported a change on every save.
+
+Nothing is re-encoded along the way, so a type that exposes only some of its struct's fields
+still casts to the whole struct. `dump/3` drops the rest, which is where the type asked for
+them to be dropped.
 
 Neither `cast/2` nor `load/3` is stricter than the type. Spectral ignores document keys the
 type does not mention and fills omitted fields from the struct defaults, so a form posting
@@ -160,17 +194,21 @@ exception you get.
 values, which is not JSON on its own. A field inside an `embeds_one` or `embeds_many` is
 therefore stored as its dumped document, the same shape it would have in a column of its own.
 
-### Lists at the top level
+### Top-level values that are not objects
 
-A type whose top level is a list works without a separate field type:
+The type does not have to describe an object. `jsonb` holds any JSON value, so a type whose
+top level is a list, or a bare string, number or boolean, needs no special handling:
 
 ```elixir
-@type names :: [String.t()]
+@type names :: [String.t()]          # stored as ["a", "b"]
+@type tags :: [Tag.t()]              # stored as [{"name": ...}, ...]
+@type mode :: :dark | String.t()     # stored as "dark"
 ```
 
-`type/1` still reports `:map`, which is only the name the Postgres adapter uses to pick a
-dumper. The parameterized callbacks produce the value the driver encodes, so the list reaches
-the column as a JSON array and `jsonb_typeof` reports `array`.
+This holds for non-scalar elements too: a list of structs is stored as an array of objects,
+and `jsonb_typeof` reports `array` in every list case. `type/1` still reports `:map`, which is
+only the name the Postgres adapter uses to pick a dumper. The parameterized callbacks produce
+the value the driver encodes, and nothing between them checks that it is a map.
 
 ### Unions
 
