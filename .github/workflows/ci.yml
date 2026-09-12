@@ -70,6 +70,9 @@ jobs:
       - name: Run Credo
         run: mix credo --strict
 
+      - name: Run ex_dna (duplication detection)
+        run: mix ex_dna
+
       - name: Restore PLT cache
         uses: actions/cache@v4
         with:

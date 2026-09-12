@@ -1,9 +1,9 @@
-.PHONY: ci compile check_format format credo type_check test docs package db db_stop shell release
+.PHONY: ci compile check_format format credo duplication type_check test docs package db db_stop shell release
 
 # The test suite needs a real Postgres instance. Start one with `make db`
 # before `make test` or `make ci`; CI provides its own as a service container.
 
-ci: compile test credo type_check check_format docs package
+ci: compile test credo duplication type_check check_format docs package
 
 compile:
 	mix compile --force --warnings-as-errors
@@ -16,6 +16,9 @@ format:
 
 credo:
 	mix credo --strict
+
+duplication:
+	mix ex_dna
 
 type_check:
 	mix dialyzer
