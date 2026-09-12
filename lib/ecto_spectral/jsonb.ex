@@ -225,10 +225,7 @@ defmodule EctoSpectral.JSONB do
   def cast(nil, _params), do: {:ok, nil}
 
   def cast(value, %{module: module, type: type}) do
-    case document_shaped?(value) do
-      true -> cast_either(value, module, type)
-      false -> cast_native(value, module, type)
-    end
+    cast_by_shape(document_shaped?(value), value, module, type)
   end
 
   @impl Ecto.ParameterizedType
@@ -269,6 +266,9 @@ defmodule EctoSpectral.JSONB do
   def format(%{module: module, type: type}) do
     "#EctoSpectral.JSONB<#{inspect(module)}.#{type_name(type)}>"
   end
+
+  defp cast_by_shape(true, value, module, type), do: cast_either(value, module, type)
+  defp cast_by_shape(false, value, module, type), do: cast_native(value, module, type)
 
   # The value cannot have come out of a JSON column, so the document reading is
   # not tried at all. Trying it is what used to replace a value the caller
