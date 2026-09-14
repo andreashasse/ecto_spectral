@@ -313,10 +313,11 @@ defmodule EctoSpectral.JSONB do
   defp document_shaped?(value) when is_list(value), do: Enum.all?(value, &document_shaped?/1)
   defp document_shaped?(_value), do: false
 
-  # For a value far enough from the type, Spectral 0.13 and 0.14 raise from
-  # inside their own error handling instead of returning errors. Callers treat
-  # both outcomes alike, so nothing here depends on which one a given Spectral
-  # release produces. A configuration problem, such as a module compiled
+  # For a value far enough from the type, older releases raise instead of
+  # returning errors: Spectral 0.13 a FunctionClauseError from its own error
+  # handling, and spectra 0.14.0 a BadMapError. From spectra 0.14.1 it is an
+  # error return. Callers treat a raise and an error return alike, so every
+  # accepted release works. A configuration problem, such as a module compiled
   # without debug_info, raises an ErlangError and is deliberately left to
   # propagate.
   defp encode(value, module, type) do
