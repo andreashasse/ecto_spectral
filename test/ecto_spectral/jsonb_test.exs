@@ -191,6 +191,15 @@ defmodule EctoSpectral.JSONBTest do
       assert [%Spectral.Error{location: [:theme]}] = opts[:spectral_errors]
     end
 
+    test "reports a value nowhere near the type with Spectral's errors" do
+      # Before spectra 0.14.1 encoding this raised, and cast could only report
+      # the exception message without the error list.
+      for value <- [:dark, 42, [:dark]] do
+        assert {:error, opts} = JSONB.cast(value, @settings)
+        assert [%Spectral.Error{} | _rest] = opts[:spectral_errors]
+      end
+    end
+
     test "rejects a value that is neither shape" do
       assert {:error, _opts} = JSONB.cast("dark", @settings)
     end

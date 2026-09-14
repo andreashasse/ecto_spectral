@@ -8,6 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Accepts Spectral 0.14.x as well as 0.13.x, and is tested against the released Spectral 0.14.0 with spectra 0.14.1.
+- Requires Spectral 0.14 and spectra 0.14.1, the first spectra release that returns an error rather than crashing when a struct type is encoded with a value that is not a map.
 - `EctoSpectral.JSONB`, an `Ecto.ParameterizedType` that stores a Spectral-typed value in a `jsonb` column. Parameterized by `:module` and `:type`, with `:on_load_error` to choose what a load failure does.
 - `EctoSpectral.LoadError`, raised when a stored document does not match the declared type. Carries the `Spectral.Error` list that `c:Ecto.ParameterizedType.load/3` cannot return.

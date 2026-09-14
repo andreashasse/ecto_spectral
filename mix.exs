@@ -31,7 +31,10 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      {:spectral, "~> 0.13.0 or ~> 0.14.0"},
+      {:spectral, "~> 0.14.0"},
+      # Spectral 0.14.0 still accepts spectra 0.14.0, which crashes when a struct
+      # type is encoded with a value that is not a map. 0.14.1 returns an error.
+      {:spectra, "~> 0.14.1"},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},
