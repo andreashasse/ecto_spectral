@@ -31,7 +31,7 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      {:spectral, "~> 0.13.0"},
+      {:spectral, "~> 0.13.0 or ~> 0.14.0"},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},

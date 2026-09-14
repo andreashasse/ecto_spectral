@@ -313,10 +313,12 @@ defmodule EctoSpectral.JSONB do
   defp document_shaped?(value) when is_list(value), do: Enum.all?(value, &document_shaped?/1)
   defp document_shaped?(_value), do: false
 
-  # Spectral raises rather than returning an error for a value far enough from
-  # the type, so both outcomes have to be handled. A configuration problem,
-  # such as a module compiled without debug_info, raises an ErlangError and is
-  # deliberately left to propagate.
+  # For a value far enough from the type, Spectral 0.13 and 0.14 raise from
+  # inside their own error handling instead of returning errors. Callers treat
+  # both outcomes alike, so nothing here depends on which one a given Spectral
+  # release produces. A configuration problem, such as a module compiled
+  # without debug_info, raises an ErlangError and is deliberately left to
+  # propagate.
   defp encode(value, module, type) do
     Spectral.encode(value, module, type, :json, [:pre_encoded])
   rescue
