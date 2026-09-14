@@ -89,3 +89,11 @@ defmodule EctoSpectral.Test.Partial do
           secret: String.t() | nil
         }
 end
+
+defmodule EctoSpectral.Test.Boxes do
+  @moduledoc "A type that takes a parameter, and a concrete alias of it."
+  use Spectral
+
+  @type box(value) :: %{value: value}
+  @type int_box :: box(integer())
+end

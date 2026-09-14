@@ -61,6 +61,15 @@ defmodule EctoSpectral.PostgresTest do
         assert column_type(column) == "jsonb"
       end
     end
+
+    test "can be declared :jsonb in the migration as well as :map" do
+      assert column_type("declared_jsonb") == "jsonb"
+
+      account = insert!(%{declared_jsonb: @dark})
+
+      assert reload(account).declared_jsonb == @dark
+      assert raw(account, "declared_jsonb")["theme"] == "dark"
+    end
   end
 
   describe "round trips" do

@@ -13,16 +13,20 @@ wraps the Erlang `spectra`.
   not checked against `jsonb` is not checked.
 - A new column needs a new migration file. Never edit an existing one: the `test` alias
   migrates but does not drop, so an in-place edit never reaches a database that already ran it.
+- Test-only configuration lives in `config/test.exs`.
 
 ## Writing the docs
 
-The callbacks are the hard part of this library, and two things make explanations of them go
-wrong.
+The callbacks are the hard part of this library, and a few things make explanations of them
+go wrong.
 
+- The README and the moduledoc say what a user sees and has to do. How the library decides,
+  such as the shape rule in `cast/2` or why `nil` reaches the callbacks, goes in comments
+  beside the code.
 - Say which direction a callback runs. `cast/2` and `load/3` decode, `dump/3` encodes.
   "Cast" reads like the write path and is not.
-- Show the shapes before explaining the rule. A paragraph about which reading `cast/2` picks
-  is unreadable without the two or three example values it is picking between.
+- Show the shapes before explaining the rule. A rule about which values `cast/2` accepts is
+  unreadable without the two or three example values it is about.
 
 Claims about Postgres behaviour need a test that demonstrates them. Several confident
 sentences here turned out to be wrong; each one now has a test next to it.

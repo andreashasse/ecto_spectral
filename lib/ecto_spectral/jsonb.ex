@@ -20,7 +20,8 @@ defmodule EctoSpectral.JSONB do
         end
       end
 
-  `:map` is Ecto's name for the column; Postgres renders it as `jsonb`.
+  The migration names the database type, not `EctoSpectral.JSONB`: `:map`,
+  which Postgres renders as `jsonb`, or `:jsonb` directly.
 
   ## Which callback goes which way
 
@@ -43,8 +44,7 @@ defmodule EctoSpectral.JSONB do
     * `:type` - required. The name of the type in that module, as an atom.
       A Spectral type reference also works: `{:type, name, arity}` picks
       between types that share a name, and `{:record, name}` names a record.
-      Neither supplies a type parameter; a type that takes one cannot be used
-      as a field.
+      A type that takes a parameter needs a concrete alias; see below.
     * `:on_load_error` - `:raise` (default) or `:error`. See "Errors" below.
 
   Any other option is rejected, apart from the ones `Ecto.Schema` itself adds
@@ -52,118 +52,78 @@ defmodule EctoSpectral.JSONB do
 
   ## `nil`
 
-  `Ecto.Type` dispatches to parameterized types *before* its own `nil`
-  shortcut, so a `NULL` column arrives as `nil` in `cast/2`, `load/3` and
-  `dump/3` alike. All three pass it straight through; a `NOT NULL` column is
+  A `NULL` column loads as `nil`, and `nil` is written as `NULL`. `NOT NULL` is
   enforced by the database and by `Ecto.Changeset.validate_required/3`, not
-  here.
+  by the type.
 
-  A `jsonb` document that is itself `null` is not distinguishable from a SQL
-  `NULL` by the time the value reaches `load/3`: the driver decodes both to
-  `nil`. Such a row therefore loads as `nil` without being checked against the
-  type, and the next write replaces it with a real `NULL`.
+  A `jsonb` document that is itself `null` also loads as `nil`, without being
+  checked against the type, and the next write replaces it with a real `NULL`.
 
-  ## What `cast/2` accepts
+  ## Casting
 
-  `cast/2` is handed two different kinds of value, depending on who is
-  calling. A controller or a form sends a **document**: string keys, string
-  values, straight from JSON. Your own code sends a **term**: the struct or
-  map the type describes. Both work:
+  `cast/2` takes both the typed value your own code builds and the
+  string-keyed document a controller or a form sends:
 
-      Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
       Ecto.Changeset.cast(account, %{settings: %MyApp.Settings{theme: :dark}}, [:settings])
+      Ecto.Changeset.cast(account, %{"settings" => %{"theme" => "dark"}}, [:settings])
 
-  A document has to be decoded. A term is already what the schema wants and
-  is passed through. So `cast/2` has to work out which one it is looking at,
-  and it does that by shape.
+  A value containing a struct, an atom key or an atom value is taken as the
+  typed value and kept as it is. Anything else is decoded as a document.
 
-  A `jsonb` column can only hand back an object with string keys, an array, a
-  string, a number, a boolean or null. Nothing else ever came from JSON.
-  A struct, an atom key or an atom value anywhere inside the value therefore
-  rules out the document reading, and `cast/2` does not attempt it:
-
-      cast(%MyApp.Settings{theme: :dark}, params)   # term: a struct
-      cast(%{theme: :dark}, params)                 # term: atom keys
-      cast(%{"theme" => "dark"}, params)            # could be either
-
-  That distinction is load-bearing rather than tidy. Spectral fills fields a
-  document leaves out from the type's defaults, so decoding a term finds none
-  of the keys it wants, succeeds anyway, and hands back all defaults. Reading
-  `%{theme: :dark}` as a document would quietly turn it into `%{}`.
-
-  When the shape allows both, `cast/2` tries both. If only one succeeds, that
-  is the answer. If both succeed it takes the decoded one, because that is
-  what `load/3` will return for the same row and the two must agree. A type
-  like `:dark | String.t()` needs this: `"dark"` is a valid `String.t()` and
-  is also what `:dark` encodes to, so keeping the string would mean the field
-  read back differently after a reload and reported a change on every save.
-
-  Nothing is re-encoded along the way, so a type that exposes only some of its
-  struct's fields still casts to the whole struct. `dump/3` drops the rest,
-  which is where the type asked for them to be dropped.
-
-  ## Leniency
-
-  Neither `cast/2` nor `load/3` is stricter than the type. Spectral ignores
-  document keys the type does not mention and fills fields the document omits
-  from the struct's defaults, so a form that posts `settings[them]` instead of
-  `settings[theme]` casts to the defaults rather than failing, and a stored
-  document with no keys in common with the type loads as the defaults rather
-  than raising. What `load/3` catches is a key that is present and wrong, not
-  a document that is simply unrelated. Use `Ecto.Changeset` validations for
-  anything the type does not express.
+    * A misspelled key is not an error. Spectral ignores keys the type does not
+      mention and fills missing fields from the struct defaults, so
+      `%{"them" => "dark"}` casts to the defaults, and a stored document with
+      nothing in common with the type loads as the defaults. Validate anything
+      the type does not express with `Ecto.Changeset`.
+    * A type using Spectral's `only` still casts to the whole struct. The
+      excluded fields are dropped on write.
+    * A value valid both ways reads as it will after a reload: with
+      `:dark | String.t()`, casting `"dark"` gives `:dark`.
 
   ## Errors
 
-  The three callbacks differ in how much they can say:
-
     * `cast/2` returns `{:error, message: ..., spectral_errors: ...}`, so
-      changeset validation keeps the detail. The message is Spectral's own
-      error text.
+      changeset validation keeps Spectral's detail.
     * `dump/3` can only return `:error`. Ecto turns that into an
-      `Ecto.ChangeError` naming the field and value, without Spectral's error
-      list.
-    * `load/3` can only return `:error` too, which Ecto turns into an
-      `ArgumentError` naming the field and the schema. Because a load failure
-      means the column already holds data that does not match the type, which
-      is a bug rather than user input, this type raises
-      `EctoSpectral.LoadError` with the full error list instead. Pass
-      `on_load_error: :error` to get Ecto's `ArgumentError` back.
+      `Ecto.ChangeError` naming the field and value.
+    * `load/3` raises `EctoSpectral.LoadError` with Spectral's error list,
+      because data already in the column that does not match its type is a
+      bug rather than user input. Pass `on_load_error: :error` to get Ecto's
+      own `ArgumentError` instead, which names the field but not the reason.
 
-  One case is worth knowing before choosing `:raise`. Postgres normalises
-  `jsonb` numbers through `numeric`, which drops exponent notation, so a
-  `float()` of `1.0e10` comes back as the integer `10000000000` and no longer
-  matches `float()`. A column holding large-magnitude floats can therefore
-  fail to load data this type itself wrote. `on_load_error: :error` does not
-  make that legal, it only changes which exception you get.
+  Postgres normalises `jsonb` numbers through `numeric`, which drops exponent
+  notation, so a `float()` of `1.0e10` comes back as the integer `10000000000`
+  and no longer matches `float()`. A column holding large-magnitude floats can
+  fail to load data this type itself wrote. `on_load_error: :error` only
+  changes which exception you get.
 
   ## Top-level values that are not objects
 
-  The type does not have to describe an object. `jsonb` holds any JSON value,
-  so a type whose top level is a list, or a bare string, number or boolean,
-  needs no special handling:
+  The type does not have to describe an object. `jsonb` holds any JSON value:
 
       @type names :: [String.t()]          # stored as ["a", "b"]
       @type tags :: [Tag.t()]              # stored as [{"name": ...}, ...]
       @type mode :: :dark | String.t()     # stored as "dark"
 
-  This holds for non-scalar elements too: a list of structs is stored as an
-  array of objects, and `jsonb_typeof` reports `array` in every list case.
-  Ecto's `:map` is only the name the adapter uses to pick a dumper. The
-  parameterized callbacks produce the value the driver encodes, and nothing
-  between them checks that it is a map, so no separate field type is needed.
+  ## Types that take a parameter
+
+  A type with a parameter cannot be named as the field type, because nothing
+  can supply the argument, and it raises on first use. Define a concrete alias
+  and name that instead:
+
+      @type box(value) :: %{value: value}
+      @type int_box :: box(integer())
+
+      field :count, EctoSpectral.JSONB, module: MyApp.Types, type: :int_box
 
   ## Scope
 
-  Tested against Postgres, where `:map` means `jsonb` and the adapter passes
-  the dumped value to the driver untouched. Other adapters make their own
-  arrangements for `:map` and are neither tested nor supported.
+  Tested against Postgres only.
 
-  `{:array, EctoSpectral.JSONB}` works, against a column declared
-  `add :col, {:array, :map}`. Ecto dumps the elements one at a time and
-  Postgres stores them as a real `jsonb[]`. Point it at a plain `jsonb` column
-  by mistake and the list is stored as a single JSON array instead, which
-  round trips but is not what the field says it is.
+  `{:array, EctoSpectral.JSONB}` works against a column declared
+  `add :col, {:array, :map}`, stored as a `jsonb[]` with one document per
+  element. Against a plain `jsonb` column the list is stored as a single JSON
+  array instead, which round trips but is not what the field says it is.
   """
 
   use Ecto.ParameterizedType
@@ -218,12 +178,25 @@ defmodule EctoSpectral.JSONB do
     }
   end
 
+  # `:map` only tells the adapter which dumper to use. The callbacks produce the
+  # value the driver encodes and nothing checks that it is a map, so a type
+  # whose top level is a list or a scalar needs no separate field type.
   @impl Ecto.ParameterizedType
   def type(_params), do: :map
 
+  # Ecto.Type dispatches to parameterized types before its own nil shortcut, so
+  # nil reaches cast/2, dump/3 and load/3 alike, a NULL column included. Plain
+  # Ecto.Type modules never see nil, which makes these clauses easy to miss.
   @impl Ecto.ParameterizedType
   def cast(nil, _params), do: {:ok, nil}
 
+  # JSON can only produce objects with string keys, arrays, strings, numbers,
+  # booleans and null. A value with a struct, an atom key or an atom value
+  # anywhere inside it is therefore a term of the type and is never read as a
+  # document. That matters because Spectral fills fields a document omits from
+  # the type's defaults: decoding a term would succeed and return all defaults.
+  # Nothing is re-encoded here, so a type using `only` keeps its excluded fields
+  # until dump/3 drops them.
   def cast(value, %{module: module, type: type}) do
     cast_by_shape(document_shaped?(value), value, module, type)
   end
@@ -284,7 +257,9 @@ defmodule EctoSpectral.JSONB do
 
   # The value is shaped like a document, so it could be either reading. When
   # both claim it, answer with the one `load/3` would give, so that a cast
-  # value and a loaded one are never two representations of the same row.
+  # value and a loaded one are never two representations of the same row. With
+  # `:dark | String.t()`, "dark" is a valid String.t() and also what :dark
+  # encodes to; keeping the string would make every save look like a change.
   defp cast_either(value, module, type) do
     encoded = encode(value, module, type)
     decoded = Spectral.decode(value, module, type, :json, [:pre_decoded])

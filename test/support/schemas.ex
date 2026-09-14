@@ -42,11 +42,15 @@ defmodule EctoSpectral.Test.Account do
     field :many_settings, {:array, EctoSpectral.JSONB}, module: Settings, type: :t
     field :prefs, EctoSpectral.JSONB, module: Prefs, type: :t
     field :partial, EctoSpectral.JSONB, module: Partial, type: :t
+    field :declared_jsonb, EctoSpectral.JSONB, module: Settings, type: :t
 
     embeds_one :profile, EctoSpectral.Test.Profile, on_replace: :update
   end
 
-  @fields ~w(settings required_settings shape names tags lenient_settings mode number many_settings prefs partial)a
+  @fields ~w(
+    settings required_settings shape names tags lenient_settings
+    mode number many_settings prefs partial declared_jsonb
+  )a
 
   @spec changeset(Ecto.Schema.t(), map()) :: Ecto.Changeset.t()
   def changeset(account, params) do

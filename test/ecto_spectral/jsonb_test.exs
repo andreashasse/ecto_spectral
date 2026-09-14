@@ -9,6 +9,7 @@ defmodule EctoSpectral.JSONBTest do
 
   alias EctoSpectral.JSONB
   alias EctoSpectral.LoadError
+  alias EctoSpectral.Test.Boxes
   alias EctoSpectral.Test.Modes
   alias EctoSpectral.Test.Numbers
   alias EctoSpectral.Test.Partial
@@ -318,6 +319,25 @@ defmodule EctoSpectral.JSONBTest do
       assert JSONB.cast(%{"value" => 1.5}, @reference) == {:ok, value}
       assert JSONB.dump(value, nil, @reference) == {:ok, %{"value" => 1.5}}
       assert JSONB.load(%{"value" => 1.5}, nil, @reference) == {:ok, value}
+    end
+  end
+
+  describe "a type that takes a parameter" do
+    test "cannot be named directly, since nothing can supply the argument" do
+      params = JSONB.init(module: Boxes, type: {:type, :box, 1})
+
+      assert_raise ErlangError, ~r/type_variable_not_found/, fn ->
+        JSONB.cast(%{"value" => 1}, params)
+      end
+    end
+
+    test "works through a concrete alias" do
+      params = JSONB.init(module: Boxes, type: :int_box)
+
+      assert JSONB.cast(%{"value" => 1}, params) == {:ok, %{value: 1}}
+      assert JSONB.dump(%{value: 1}, nil, params) == {:ok, %{"value" => 1}}
+      assert JSONB.load(%{"value" => 1}, nil, params) == {:ok, %{value: 1}}
+      assert {:error, _opts} = JSONB.cast(%{"value" => "one"}, params)
     end
   end
 
