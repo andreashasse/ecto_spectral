@@ -31,10 +31,11 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      {:spectral, "~> 0.14.0"},
-      # Spectral 0.14.0 still accepts spectra 0.14.0, which crashes when a struct
-      # type is encoded with a value that is not a map. 0.14.1 returns an error.
-      {:spectra, "~> 0.14.1"},
+      # TODO: revert both to hex versions once spectra 0.17 and spectral 0.17 are released.
+      {:spectral,
+       github: "andreashasse/spectral", branch: "andreashasse/pre-encoded-nil", override: true},
+      {:spectra,
+       github: "andreashasse/spectra", branch: "andreashasse/nil-fields-per-call", override: true},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},

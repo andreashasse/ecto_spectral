@@ -531,3 +531,48 @@ defmodule EctoSpectral.PostgresTest do
     end
   end
 end
+
+defmodule EctoSpectral.PostgresNilFieldsTest do
+  @moduledoc """
+  A nil field written as JSON null, with `config :spectra, :nil_fields, :null`.
+
+  Not async: it changes the application environment every encode reads.
+  """
+  use EctoSpectral.DataCase, async: false
+
+  alias EctoSpectral.Test.Account
+  alias EctoSpectral.Test.Settings
+
+  setup do
+    previous = Application.fetch_env(:spectra, :nil_fields)
+    Application.put_env(:spectra, :nil_fields, :null)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:spectra, :nil_fields, value)
+        :error -> Application.delete_env(:spectra, :nil_fields)
+      end
+    end)
+  end
+
+  test "a nil field is stored as JSON null, not the string \"null\"" do
+    settings = %Settings{theme: :light, notifications: true, locale: nil}
+
+    account =
+      %Account{}
+      |> Account.changeset(%{required_settings: settings})
+      |> TestRepo.insert!()
+
+    assert %{rows: [["null", true]]} =
+             TestRepo.query!(
+               """
+               SELECT jsonb_typeof(required_settings->'locale'),
+                      required_settings->'locale' = 'null'::jsonb
+               FROM accounts WHERE id = $1
+               """,
+               [account.id]
+             )
+
+    assert TestRepo.get!(Account, account.id).required_settings == settings
+  end
+end
