@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
 ### Changed
-- Depends on unreleased git branches of Spectral (`andreashasse/pre-encoded-nil`) and spectra (`andreashasse/nil-fields-per-call`) so they can be tested together before the 0.17 releases. To be reverted to hex versions once those are out.
+- Requires Spectral 0.17 and spectra 0.17. With `config :spectra, :nil_fields, :null`, a `nil` field in a `jsonb` column is stored as JSON `null` instead of the string `"null"`. The default setting still leaves `nil` fields out.
 - Updated `decimal` to 3.2.0 in the lock file.
 
 ### Added

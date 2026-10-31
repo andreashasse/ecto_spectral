@@ -1,7 +1,7 @@
 defmodule EctoSpectral.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/andreashasse/ecto_spectral"
 
   def project do
@@ -31,11 +31,8 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      # TODO: revert both to hex versions once spectra 0.17 and spectral 0.17 are released.
-      {:spectral,
-       github: "andreashasse/spectral", branch: "andreashasse/pre-encoded-nil", override: true},
-      {:spectra,
-       github: "andreashasse/spectra", branch: "andreashasse/nil-fields-per-call", override: true},
+      {:spectral, "~> 0.17.0"},
+      {:spectra, "~> 0.17.0"},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},
