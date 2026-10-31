@@ -81,7 +81,7 @@ and a Postgres instance to test against.
 ```elixir
 def deps do
   [
-    {:ecto_spectral, "~> 0.1"}
+    {:ecto_spectral, "~> 0.2"}
   ]
 end
 ```

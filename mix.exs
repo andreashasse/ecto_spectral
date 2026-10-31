@@ -1,7 +1,7 @@
 defmodule EctoSpectral.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/andreashasse/ecto_spectral"
 
   def project do
@@ -31,10 +31,8 @@ defmodule EctoSpectral.MixProject do
 
   defp deps do
     [
-      {:spectral, "~> 0.14.0"},
-      # Spectral 0.14.0 still accepts spectra 0.14.0, which crashes when a struct
-      # type is encoded with a value that is not a map. 0.14.1 returns an error.
-      {:spectra, "~> 0.14.1"},
+      {:spectral, "~> 0.17.0"},
+      {:spectra, "~> 0.17.0"},
       {:ecto, "~> 3.12"},
       # Only the tests talk to a database.
       {:ecto_sql, "~> 3.12", only: [:dev, :test]},
